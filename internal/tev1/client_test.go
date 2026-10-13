@@ -381,3 +381,29 @@ func TestPreflightUnreachable(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// Regression: a live Ollama returned "legend" as an object, which used to fail
+// the whole parse. Legend is informational and must accept any JSON shape.
+func TestLegendAcceptsAnyShape(t *testing.T) {
+	req := Request{Questions: QuestionSet{{Name: "imp", Type: TypeScore, Criteria: json.RawMessage(`["a","b","c"]`)}}}
+	for name, legend := range map[string]string{
+		"object": `{"0":"a","1":"b","2":"c"}`, "array": `["a","b","c"]`, "string": `"x"`, "null": `null`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := `{"answers":{"imp":{"score":1.5,"legend":` + legend + `,"probabilities":{"0":0.2,"1":0.5,"2":0.3}}}}`
+			resp, err := ParseResponse([]byte(body), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Answers["imp"].Score == nil || *resp.Answers["imp"].Score != 1.5 {
+				t.Errorf("score lost: %+v", resp.Answers["imp"])
+			}
+			// must survive the cache round trip
+			b, err := json.Marshal(resp.Answers["imp"])
+			var back Answer
+			if err != nil || json.Unmarshal(b, &back) != nil {
+				t.Fatalf("round trip failed: %v", err)
+			}
+		})
+	}
+}

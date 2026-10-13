@@ -2,7 +2,7 @@
   "model": "tev1:0.8b",
   "ollama_url": "http://localhost:11434",
   "keep_alive": "5m",
-  "timeout_seconds": 60,
+  "timeout_seconds": 180,
   "retries": 3,
   "backoff_ms": 500,
   "concurrency": 1,

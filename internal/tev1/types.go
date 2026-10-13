@@ -135,7 +135,7 @@ type Answer struct {
 	Noul          *float64
 	Score         *float64
 	Probabilities map[string]float64 // option name (choice) or level index "0".."n" (score)
-	Legend        []string
+	Legend        json.RawMessage // informational; shape varies (object in live responses), kept verbatim
 	Confidence    *float64
 	name          string // set when the server labels array entries
 }
@@ -149,13 +149,16 @@ func (a *Answer) UnmarshalJSON(data []byte) error {
 		Noul          json.RawMessage `json:"noul"`
 		Score         json.RawMessage `json:"score"`
 		Probabilities json.RawMessage `json:"probabilities"`
-		Legend        []string        `json:"legend"`
+		Legend        json.RawMessage `json:"legend"`
 		Confidence    *float64        `json:"confidence"`
 	}
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
-	*a = Answer{Type: w.Type, Legend: w.Legend, Confidence: w.Confidence, name: w.Name}
+	*a = Answer{Type: w.Type, Confidence: w.Confidence, name: w.Name}
+	if len(w.Legend) > 0 && string(w.Legend) != "null" {
+		a.Legend = w.Legend
+	}
 	if a.name == "" {
 		a.name = w.ID
 	}
@@ -207,7 +210,7 @@ func (a Answer) MarshalJSON() ([]byte, error) {
 		Noul          *float64           `json:"noul,omitempty"`
 		Score         *float64           `json:"score,omitempty"`
 		Probabilities map[string]float64 `json:"probabilities,omitempty"`
-		Legend        []string           `json:"legend,omitempty"`
+		Legend        json.RawMessage    `json:"legend,omitempty"`
 		Confidence    *float64           `json:"confidence,omitempty"`
 	}
 	return json.Marshal(out{a.Type, a.Choice, a.Noul, a.Score, a.Probabilities, a.Legend, a.Confidence})
