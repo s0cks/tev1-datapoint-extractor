@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/s0cks/tev1-rank/schema/top.schema.json",
+  "title": "tev1-rank top.json",
+  "description": "The ranked, selected segments handed to stage 2. Deterministic: no timestamps; identical inputs, model, config and cache state give byte-identical files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "source", "model", "question_set_hash", "selection", "count", "items"],
+  "properties": {
+    "schema_version": { "const": "tev1-rank/top/v1" },
+    "mode": {
+      "enum": ["model", "no-model"],
+      "description": "\"no-model\" means ranking used deterministic features only; kind and model are null."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "hash"],
+      "properties": {
+        "file": { "type": "string", "description": "Base name of the input file." },
+        "hash": { "$ref": "#/$defs/hash", "description": "sha256 of the whole input file." }
+      }
+    },
+    "model": { "type": ["string", "null"], "description": "Ollama model tag, or null in no-model mode." },
+    "question_set_hash": { "type": ["string", "null"], "description": "sha256 over model + questions + state format, or null in no-model mode." },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["top", "min_score", "max_per_kind"],
+      "properties": {
+        "top": { "type": "integer", "minimum": 0, "description": "0 = unlimited." },
+        "min_score": { "type": "number" },
+        "max_per_kind": { "type": "integer", "minimum": 0, "description": "0 = no cap." }
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "items": {
+      "type": "array",
+      "description": "In ascending rank order (best first).",
+      "items": { "$ref": "#/$defs/item" }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "id", "hash", "start", "end", "text", "kind", "final_score", "needs_review", "review_reasons", "features", "model"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "id": { "type": "string" },
+        "hash": { "$ref": "#/$defs/hash", "description": "sha256 of text." },
+        "start": { "type": "integer", "minimum": 0, "description": "Byte offset into the input file." },
+        "end": { "type": "integer", "minimum": 0, "description": "Exclusive byte offset; input[start:end] == text." },
+        "text": { "type": "string" },
+        "kind": { "type": ["string", "null"], "description": "Most likely kind; null in no-model mode." },
+        "final_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "needs_review": { "type": "boolean" },
+        "review_reasons": {
+          "type": "array",
+          "items": { "enum": ["high_unknown_probability", "datapoint_uncertain", "kind_top_two_close", "low_confidence", "model_error"] }
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["numbers", "percentages", "currency", "years", "dates", "entities", "length", "words", "position", "term_weight"],
+          "properties": {
+            "numbers": { "type": "integer", "minimum": 0 },
+            "percentages": { "type": "integer", "minimum": 0 },
+            "currency": { "type": "integer", "minimum": 0 },
+            "years": { "type": "integer", "minimum": 0 },
+            "dates": { "type": "integer", "minimum": 0 },
+            "entities": { "type": "integer", "minimum": 0 },
+            "length": { "type": "integer", "minimum": 0, "description": "Characters (runes)." },
+            "words": { "type": "integer", "minimum": 0 },
+            "position": { "type": "number", "minimum": 0, "maximum": 1 },
+            "term_weight": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "model": {
+          "type": ["object", "null"],
+          "description": "Compact model answers; null in no-model mode.",
+          "additionalProperties": false,
+          "required": ["p_datapoint", "p_unknown", "importance", "kind_probs", "confidence"],
+          "properties": {
+            "p_datapoint": { "type": "number", "minimum": 0, "maximum": 1 },
+            "p_unknown": { "type": "number", "minimum": 0, "maximum": 1 },
+            "importance": { "type": "number", "description": "Expected importance on the configured scale, 1..N (1..5 by default)." },
+            "kind_probs": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+            "confidence": { "type": ["number", "null"], "description": "Lowest model-reported confidence across the answers, if reported." }
+          }
+        }
+      }
+    }
+  }
+}
