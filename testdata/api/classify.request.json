@@ -1,0 +1,38 @@
+{
+  "model": "tev1:0.8b",
+  "state": {
+    "segment": "Revenue grew 14% to $2.3 billion in 2024, according to the annual report.",
+    "features": "numbers=3; percentages=1; currency=1; years=1; dates=0; named_entities=0; words=13"
+  },
+  "questions": {
+    "is_datapoint": {
+      "type": "choice",
+      "instructions": "Does the segment contain a concrete, quantifiable or checkable fact?",
+      "criteria": {
+        "yes": "It states a specific number, date, name or other checkable fact.",
+        "no": "It is general, vague or purely rhetorical.",
+        "unknown": "It cannot be judged from the text."
+      }
+    },
+    "kind": {
+      "type": "choice",
+      "instructions": "Which kind of statement is this segment?",
+      "criteria": {
+        "stat": "A statistic or measurement.",
+        "timeline_event": "Something that happened at a specific time.",
+        "comparison": "Compares two or more things.",
+        "quote": "Reported speech or a quotation.",
+        "definition": "Defines a term or concept.",
+        "list": "A list or enumeration.",
+        "claim": "An assertion or opinion that is not a measured fact.",
+        "narrative": "Storytelling or descriptive prose.",
+        "other": "None of the above."
+      }
+    },
+    "importance": {
+      "type": "score",
+      "instructions": "How important is this segment to a reader skimming the document?",
+      "criteria": ["Trivial", "Minor", "Moderate", "Important", "Critical"]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "model": "tev1:0.8b",
+  "answers": {
+    "is_datapoint": {"type":"choice","choice":"yes","probabilities":{"yes":0.93,"no":0.05,"unknown":0.02},"confidence":0.9},
+    "kind": {"type":"choice","choice":"stat","probabilities":{"stat":0.81,"timeline_event":0.04,"comparison":0.05,"quote":0.01,"definition":0.01,"list":0.01,"claim":0.03,"narrative":0.02,"other":0.02},"confidence":0.78},
+    "importance": {"type":"score","score":3.2,"legend":["Trivial","Minor","Moderate","Important","Critical"],"probabilities":{"0":0.01,"1":0.04,"2":0.15,"3":0.6,"4":0.2},"confidence":0.58}
+  }
+}
