@@ -1,0 +1,79 @@
+{
+  "model": "tev1:0.8b",
+  "ollama_url": "http://localhost:11434",
+  "keep_alive": "5m",
+  "timeout_seconds": 60,
+  "retries": 3,
+  "backoff_ms": 500,
+  "concurrency": 1,
+
+  "segmenter": {
+    "max_paragraph_bytes": 600,
+    "hard_max_bytes": 1400
+  },
+
+  "state": {
+    "include_features": true,
+    "max_text_bytes": 4000
+  },
+
+  "questions": [
+    {
+      "name": "is_datapoint",
+      "type": "choice",
+      "instructions": "Does the segment contain a concrete, quantifiable or checkable fact (a specific number, date, name, measurement or event that could be verified)?",
+      "criteria": {
+        "yes": "It states at least one specific, checkable fact such as a number, date, amount, measurement or named event.",
+        "no": "It is general, vague, rhetorical or purely descriptive, with nothing concrete to check.",
+        "unknown": "The text is too fragmentary or ambiguous to judge."
+      }
+    },
+    {
+      "name": "kind",
+      "type": "choice",
+      "instructions": "Which kind of statement is this segment?",
+      "criteria": {
+        "stat": "A statistic or measurement: a quantity, rate, percentage, amount or count.",
+        "timeline_event": "Something that happened or will happen at a specific time or in a sequence.",
+        "comparison": "Compares two or more things, or contrasts before and after.",
+        "quote": "Reported speech or a direct quotation attributed to someone.",
+        "definition": "Defines or explains what a term or concept means.",
+        "list": "A list or enumeration of items or steps.",
+        "claim": "An assertion, argument or opinion that is not itself a measured fact.",
+        "narrative": "Storytelling, scene-setting or descriptive prose.",
+        "other": "None of the above."
+      }
+    },
+    {
+      "name": "importance",
+      "type": "score",
+      "instructions": "How important is this segment for someone skimming the document for its key points?",
+      "criteria": [
+        "Trivial: filler, transitions or minor detail.",
+        "Minor: supporting detail.",
+        "Moderate: useful context.",
+        "Important: a key point.",
+        "Critical: a headline finding or central fact."
+      ]
+    }
+  ],
+
+  "ranking": {
+    "weights": { "datapoint": 0.40, "importance": 0.30, "kind": 0.15, "features": 0.15 },
+    "kind_weights": {
+      "stat": 1.0, "timeline_event": 0.85, "comparison": 0.9, "quote": 0.5,
+      "definition": 0.5, "list": 0.6, "claim": 0.6, "narrative": 0.2, "other": 0.1
+    },
+    "default_kind_weight": 0.3,
+    "feature_weights": {
+      "numbers": 0.20, "percentages": 0.20, "currency": 0.20, "years": 0.10,
+      "dates": 0.10, "entities": 0.10, "term_weight": 0.10
+    },
+    "feature_saturation": 2,
+    "review": { "unknown_prob": 0.25, "kind_margin": 0.15, "min_confidence": 0.30 }
+  },
+
+  "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
+
+  "eval": { "datapoint_threshold": 0.5, "k": [5, 10] }
+}
