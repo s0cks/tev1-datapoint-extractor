@@ -190,8 +190,8 @@ func TestRetriesTransientThenSucceeds(t *testing.T) {
 	if _, err := c.Decide(context.Background(), basicReq(t)); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 3 {
-		t.Errorf("calls = %d, want 3", calls)
+	if atomic.LoadInt32(&calls) != 3 {
+		t.Errorf("calls = %d, want 3", atomic.LoadInt32(&calls))
 	}
 }
 
@@ -220,8 +220,8 @@ func TestNoRetryOnClientErrorOrMalformed(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error")
 			}
-			if calls != 1 {
-				t.Errorf("calls = %d, want 1 (no retry)", calls)
+			if atomic.LoadInt32(&calls) != 1 {
+				t.Errorf("calls = %d, want 1 (no retry)", atomic.LoadInt32(&calls))
 			}
 			var ae *APIError
 			if tt.isAPI != errors.As(err, &ae) {
@@ -247,8 +247,8 @@ func TestGivesUpAfterRetries(t *testing.T) {
 	if !errors.As(err, &ae) || ae.Status != 500 {
 		t.Fatalf("err = %v", err)
 	}
-	if calls != 3 {
-		t.Errorf("calls = %d, want 3", calls)
+	if atomic.LoadInt32(&calls) != 3 {
+		t.Errorf("calls = %d, want 3", atomic.LoadInt32(&calls))
 	}
 }
 
@@ -270,8 +270,8 @@ func TestTimeoutIsRetriedThenFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if calls != 2 {
-		t.Errorf("calls = %d, want 2", calls)
+	if atomic.LoadInt32(&calls) != 2 {
+		t.Errorf("calls = %d, want 2", atomic.LoadInt32(&calls))
 	}
 	if time.Since(start) > 3*time.Second {
 		t.Errorf("took too long: %v", time.Since(start))

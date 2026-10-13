@@ -209,6 +209,9 @@ func (c *Client) Preflight(ctx context.Context, model string) (string, error) {
 		Version string `json:"version"`
 	}
 	if err := c.getJSON(ctx, "/api/version", &ver); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		var ne net.Error
 		if errors.As(err, &ne) || strings.Contains(err.Error(), "connection refused") {
 			return "", &PreflightError{fmt.Sprintf("cannot reach Ollama at %s (%v). Start it with `ollama serve`, set --ollama-url / OLLAMA_HOST, or use --no-model", c.BaseURL, err)}
@@ -229,6 +232,9 @@ func (c *Client) Preflight(ctx context.Context, model string) (string, error) {
 		} `json:"models"`
 	}
 	if err := c.getJSON(ctx, "/api/tags", &tags); err != nil {
+		if ctx.Err() != nil {
+			return ver.Version, ctx.Err()
+		}
 		return ver.Version, &PreflightError{fmt.Sprintf("listing local models failed: %v", err)}
 	}
 	want := normalizeModel(model)
