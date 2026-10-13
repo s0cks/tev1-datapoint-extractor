@@ -135,7 +135,7 @@ type Answer struct {
 	Noul          *float64
 	Score         *float64
 	Probabilities map[string]float64 // option name (choice) or level index "0".."n" (score)
-	Legend        json.RawMessage // informational; shape varies (object in live responses), kept verbatim
+	Legend        json.RawMessage    // informational; shape varies (object in live responses), kept verbatim
 	Confidence    *float64
 	name          string // set when the server labels array entries
 }
