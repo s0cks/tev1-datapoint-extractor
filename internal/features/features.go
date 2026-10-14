@@ -117,7 +117,7 @@ const topTerms = 5
 // of segments and df the number of segments containing it. Frequent terms
 // therefore weigh more, and terms concentrated in fewer segments weigh a bit
 // more still. A segment's raw score is the
-// mean weight of its top terms; scores are then normalised by the document
+// sum of the weights of its top terms divided by a fixed 5, so very short fragments (headings) cannot score high; scores are then normalised by the document
 // maximum so TermWeight is in [0,1].
 func ComputeAll(segs []segment.Segment, docLen int) []Features {
 	n := len(segs)
@@ -158,9 +158,7 @@ func ComputeAll(segs []segment.Segment, docLen int) []Features {
 		for _, w := range ws {
 			sum += w
 		}
-		if len(ws) > 0 {
-			raw[i] = sum / float64(len(ws))
-		}
+		raw[i] = sum / topTerms // fixed denominator: short fragments such as headings do not max out
 		if raw[i] > maxRaw {
 			maxRaw = raw[i]
 		}

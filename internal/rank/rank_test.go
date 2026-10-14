@@ -223,3 +223,37 @@ func TestRankAndSelect(t *testing.T) {
 		}
 	})
 }
+
+// Regression: importance/kind confidences are inherently low (flat ordinal and
+// many-way distributions). They used to flag every segment as low_confidence.
+func TestReviewIgnoresLowConfidenceOfOrdinalQuestions(t *testing.T) {
+	cfg := mustCfg(t)
+	a := answers(0.9, 0.02, "stat", map[string]float64{"stat": 0.9, "claim": 0.1}, 3, 0.1)
+	a["is_datapoint"] = tev1.Answer{Choice: "yes", Probabilities: map[string]float64{"yes": 0.9, "no": 0.08, "unknown": 0.02}, Confidence: f(0.9)}
+	s, err := ExtractSignals(cfg, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Confidence == nil || *s.Confidence != 0.9 {
+		t.Fatalf("confidence = %v, want 0.9 (is_datapoint only)", s.Confidence)
+	}
+	if r := Review(cfg.Ranking.Review, s); len(r) != 0 {
+		t.Errorf("review = %v, want none", r)
+	}
+	// Opting everything back in restores the old behaviour.
+	cfg.Ranking.Review.ConfidenceQuestions = []string{"is_datapoint", "kind", "importance"}
+	s, _ = ExtractSignals(cfg, a)
+	if s.Confidence == nil || *s.Confidence != 0.1 {
+		t.Fatalf("confidence = %v, want 0.1", s.Confidence)
+	}
+	if r := Review(cfg.Ranking.Review, s); len(r) != 1 || r[0] != "low_confidence" {
+		t.Errorf("review = %v", r)
+	}
+	// An uncertain is_datapoint is still caught.
+	cfg = mustCfg(t)
+	a["is_datapoint"] = tev1.Answer{Choice: "yes", Probabilities: map[string]float64{"yes": 0.4, "no": 0.35, "unknown": 0.25}, Confidence: f(0.1)}
+	s, _ = ExtractSignals(cfg, a)
+	if r := Review(cfg.Ranking.Review, s); len(r) != 2 {
+		t.Errorf("review = %v, want high_unknown_probability + low_confidence", r)
+	}
+}

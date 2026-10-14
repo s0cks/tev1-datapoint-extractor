@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,17 +104,39 @@ func TestFixtures(t *testing.T) {
 	}
 }
 
+// TestClassifyFixtureValues pins the REAL response captured from Ollama 0.40.1 / tev1:0.8b.
 func TestClassifyFixtureValues(t *testing.T) {
 	req := loadRequest(t, "../../testdata/api/classify.request.json")
 	resp, err := ParseResponse(readFile(t, "../../testdata/api/classify.response.json"), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := resp.Answers["is_datapoint"]; got.Choice != "yes" || got.Probabilities["yes"] != 0.93 {
-		t.Errorf("is_datapoint = %+v", got)
+	dp := resp.Answers["is_datapoint"]
+	if dp.Choice != "yes" || dp.Probabilities["yes"] < 0.99 || dp.Confidence == nil || *dp.Confidence < 0.96 || dp.Type != "choice" {
+		t.Errorf("is_datapoint = %+v", dp)
 	}
-	if got := resp.Answers["importance"]; got.Score == nil || *got.Score != 3.2 || got.Probabilities["3"] != 0.6 {
-		t.Errorf("importance = %+v", got)
+	if k := resp.Answers["kind"]; k.Choice != "stat" || len(k.Probabilities) != 9 {
+		t.Errorf("kind = %+v", k)
+	}
+	imp := resp.Answers["importance"]
+	if imp.Score == nil || *imp.Score < 1.80 || *imp.Score > 1.81 || imp.Probabilities["3"] < 0.45 || imp.Probabilities["3"] > 0.46 {
+		t.Errorf("importance = %+v", imp)
+	}
+	// score is the probability-weighted level; the client relies on that when it adds 1 for the 1..5 scale
+	exp := 0.0
+	for lvl, p := range imp.Probabilities {
+		n := 0
+		fmt.Sscan(lvl, &n)
+		exp += float64(n) * p
+	}
+	if math.Abs(exp-*imp.Score) > 1e-6 {
+		t.Errorf("score %v is not Σ level*p = %v", *imp.Score, exp)
+	}
+	if !strings.Contains(string(imp.Legend), "Trivial") {
+		t.Errorf("legend = %s", imp.Legend)
+	}
+	if resp.Usage.InputTokens != 1803 || resp.Usage.OutputTokens != 4 || resp.Model != "tev1:0.8b" {
+		t.Errorf("usage/model = %+v %q", resp.Usage, resp.Model)
 	}
 }
 

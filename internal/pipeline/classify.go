@@ -73,11 +73,13 @@ func (r Record) Kind() string {
 
 // Stats are counters collected while classifying.
 type Stats struct {
-	ModelCalls  int           `json:"model_calls"`
-	CacheHits   int           `json:"cache_hits"`
-	CacheMisses int           `json:"cache_misses"`
-	Errors      int           `json:"errors"`
-	ModelTime   time.Duration `json:"-"`
+	ModelCalls   int           `json:"model_calls"`
+	CacheHits    int           `json:"cache_hits"`
+	CacheMisses  int           `json:"cache_misses"`
+	Errors       int           `json:"errors"`
+	InputTokens  int           `json:"input_tokens"` // summed over model calls (as reported by the server)
+	OutputTokens int           `json:"output_tokens"`
+	ModelTime    time.Duration `json:"-"`
 }
 
 // Classifier classifies segments with tev1, using the cache when enabled.
@@ -88,9 +90,11 @@ type Classifier struct {
 	Log     *slog.Logger
 	NoModel bool
 
-	qsHash string
-	mu     sync.Mutex
-	stats  Stats
+	qsHash   string
+	mu       sync.Mutex
+	stats    Stats
+	maxIn    int  // largest input_tokens seen in one call
+	loggedIn bool // first-call token message emitted
 }
 
 func (cl *Classifier) log() *slog.Logger {
@@ -122,6 +126,9 @@ type state struct {
 // rune boundary because tev1 only has a ~2k-token context.
 func (cl *Classifier) buildState(text string, f features.Features) (any, bool) {
 	truncated := false
+	if cl.Cfg.State.NormalizeText {
+		text = segment.NormalizeText(text)
+	}
 	if max := cl.Cfg.State.MaxTextBytes; max > 0 && len(text) > max {
 		cut := max
 		for cut > 0 && !utf8.RuneStart(text[cut]) {
@@ -156,6 +163,9 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 	}
 	if cl.NoModel {
 		return recs, nil
+	}
+	for _, w := range cfg.Warnings() {
+		cl.log().Warn(w)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -242,6 +252,7 @@ func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f fe
 	if err != nil {
 		return nil, rank.Signals{}, false, err
 	}
+	cl.noteUsage(resp.Usage)
 	sig, err := rank.ExtractSignals(cl.Cfg, resp.Answers)
 	if err != nil {
 		return nil, rank.Signals{}, false, fmt.Errorf("%w: %v", tev1.ErrMalformed, err)
@@ -290,3 +301,27 @@ func IsCanceled(err error) bool {
 }
 
 func hashBytes(b []byte) string { return segment.HashText(string(b)) }
+
+// noteUsage accumulates token counts and warns when a request approaches the
+// context window. tev1 has a small (~2k token) context, and the question set
+// itself is a large part of every request.
+func (cl *Classifier) noteUsage(u tev1.Usage) {
+	cl.mu.Lock()
+	cl.stats.InputTokens += u.InputTokens
+	cl.stats.OutputTokens += u.OutputTokens
+	first := !cl.loggedIn && u.InputTokens > 0
+	cl.loggedIn = cl.loggedIn || first
+	newMax := u.InputTokens > cl.maxIn
+	if newMax {
+		cl.maxIn = u.InputTokens
+	}
+	cl.mu.Unlock()
+	if first {
+		cl.log().Info("first model call", "input_tokens", u.InputTokens, "context_tokens", cl.Cfg.State.ContextTokens)
+	}
+	if ctxTok := cl.Cfg.State.ContextTokens; ctxTok > 0 && newMax && float64(u.InputTokens) > 0.9*float64(ctxTok) {
+		cl.log().Warn("request is close to the model context window; long segments may be truncated or rejected",
+			"input_tokens", u.InputTokens, "context_tokens", ctxTok,
+			"hint", "shorten question descriptions or lower segmenter.hard_max_bytes / state.max_text_bytes")
+	}
+}

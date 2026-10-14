@@ -42,12 +42,18 @@ Machine-checkable schema: [`schema/top.schema.json`](../schema/top.schema.json) 
         "p_datapoint": 0.93, "p_unknown": 0.02,
         "importance": 4.2,               // expected importance on 1..5
         "kind_probs": { "stat": 0.81, "claim": 0.03, "…": 0 },
-        "confidence": 0.58               // lowest model-reported confidence; null if not reported
+        "confidence": 0.81               // lowest model confidence among review.confidence_questions (default is_datapoint); null if not reported
       }
     }
   ]
 }
 ```
+
+`needs_review` is set when any of these hold (thresholds in `ranking.review`): P(unknown) >=
+`unknown_prob`; the top two `kind` probabilities are within `kind_margin`; or the model confidence of
+the questions in `confidence_questions` is below `min_confidence`. By default only `is_datapoint`
+counts for confidence: `importance` (5-level ordinal) and `kind` (many-way) report inherently low
+confidence and would flag every segment.
 
 `review_reasons` values: `high_unknown_probability`, `datapoint_uncertain` (noul questions only),
 `kind_top_two_close`, `low_confidence`, `model_error` (that segment fell back to feature scoring).
@@ -105,7 +111,8 @@ set to zero, so it sinks rather than floats to the top.
   "config": { … },                                // the effective config, including the questions
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
   "counts": { "segments": 26, "duplicates": 1, "ranked": 25, "selected": 20, "needs_review": 3,
-              "model_calls": 25, "cache_hits": 1, "cache_misses": 25, "model_errors": 0 },
+              "model_calls": 25, "cache_hits": 1, "cache_misses": 25, "model_errors": 0,
+              "input_tokens": 45075, "output_tokens": 100 },       // summed over model calls, as reported by the server
   "timings_ms": { "segment": 1, "preflight": 12, "classify": 8123, "total": 8140, "model_calls_sum": 8090 },
   "outputs": { "scored": "scored.jsonl", "top": "top.json" }
 }
@@ -122,3 +129,17 @@ concurrency, retries and the like deliberately do **not** change it.
   (unless `--allow-errors`); outputs are still written in that case.
 - `130`: interrupted. No outputs are written; already-classified segments stay in the cache, so a
   rerun resumes.
+
+## Text sent to the model vs. text reported
+
+`text`, `start` and `end` are always the original bytes. By default (`state.normalize_text`) the
+model is sent a cleaned copy: whitespace and hard line wraps collapsed to single spaces,
+zero-width characters and soft hyphens removed, and a space before `. , ; :` dropped. If stage 2
+wants the cleaned text too, say so and it can be added as an additive field.
+
+## Config warnings
+
+At startup (model mode) the tool warns when `kind` options have no `ranking.kind_weights` entry
+(they fall back to `default_kind_weight`, so the kind term cannot separate them) and when
+`kind_weights` has entries that match no option. `kind_weights` are **merged** with the embedded
+defaults, so stale default keys linger; they are ignored but reported.

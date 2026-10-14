@@ -364,3 +364,47 @@ func TestStateTruncationAndConcurrency(t *testing.T) {
 		t.Errorf("truncation flags wrong: %v %v", recs[0]["state_truncated"], recs[1]["state_truncated"])
 	}
 }
+
+// The model sees normalised text; the record keeps the original bytes.
+func TestStateIsNormalisedButRecordIsVerbatim(t *testing.T) {
+	var got struct{ Seg, Feat string }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/systemone":
+			var req struct {
+				State struct{ Segment, Features string } `json:"state"`
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			got.Seg, got.Feat = req.State.Segment, req.State.Features
+			json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{
+				"is_datapoint": map[string]any{"choice": "yes", "probabilities": map[string]float64{"yes": 1}},
+				"kind":         map[string]any{"choice": "stat", "probabilities": map[string]float64{"stat": 1}},
+				"importance":   map[string]any{"score": 2.0},
+			}})
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	raw := "In 1960, the Agency\u202f(\u200dCIA\u200d) Station Chief\nreceived a cable in the Congo ."
+	o := opts(t, nil, dir, writeInput(t, dir, raw+"\n"))
+	o.Config.OllamaURL = srv.URL
+	o.Client = &tev1.Client{BaseURL: srv.URL, Timeout: 5 * time.Second}
+	o.SkipPreflight = true
+	if _, err := Run(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if want := "In 1960, the Agency (CIA) Station Chief received a cable in the Congo."; got.Seg != want {
+		t.Errorf("model saw %q, want %q", got.Seg, want)
+	}
+	recs := readRecords(t, dir)
+	if recs[0]["text"] != raw {
+		t.Errorf("record text altered: %q", recs[0]["text"])
+	}
+	// turning normalisation off sends the raw text and changes the cache key
+	o2 := opts(t, nil, t.TempDir(), writeInput(t, dir, raw+"\n"))
+	o2.Config.OllamaURL = srv.URL
+	o2.Config.State.NormalizeText = false
+	if o2.Config.QuestionSetHash() == o.Config.QuestionSetHash() {
+		t.Error("normalize_text must be part of the question set hash")
+	}
+}

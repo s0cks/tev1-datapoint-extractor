@@ -1,0 +1,5 @@
+Hand-written (not captured from Ollama):
+  basic.request.json / basic.response.json
+  arrayshape.request.json / arrayshape.response.json   (deliberate parser-tolerance test; not a recording)
+Captured from a live Ollama 0.40.1 with tev1:0.8b:
+  classify.response.json

@@ -73,3 +73,12 @@ func TestComputeAll(t *testing.T) {
 		t.Error("empty doc should yield no features")
 	}
 }
+
+func TestTermWeightShortFragmentDoesNotMaxOut(t *testing.T) {
+	text := "Lumumba\n\nLumumba was the elected prime minister and Lumumba was assassinated.\n\nGottlieb prepared the toxin and Gottlieb travelled to Leopoldville."
+	segs := segment.Split(text, segment.DefaultOptions())
+	fs := ComputeAll(segs, len(text))
+	if fs[0].TermWeight >= 1 || fs[0].TermWeight >= fs[1].TermWeight {
+		t.Errorf("heading term weight %v should be below the full sentence's %v", fs[0].TermWeight, fs[1].TermWeight)
+	}
+}

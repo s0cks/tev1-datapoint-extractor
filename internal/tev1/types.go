@@ -216,10 +216,17 @@ func (a Answer) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out{a.Type, a.Choice, a.Noul, a.Score, a.Probabilities, a.Legend, a.Confidence})
 }
 
+// Usage is the token accounting the server reports ("usage" in the response).
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
 // Response is a decoded and validated /v1/systemone response.
 type Response struct {
 	Model   string
 	Answers map[string]Answer
+	Usage   Usage
 }
 
 // ErrMalformed marks a response that parsed as HTTP 200 but does not match the
@@ -251,6 +258,7 @@ func ParseResponse(body []byte, req Request) (*Response, error) {
 	var top struct {
 		Model   string          `json:"model"`
 		Answers json.RawMessage `json:"answers"`
+		Usage   Usage           `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &top); err != nil {
 		return nil, fmt.Errorf("%w: invalid JSON: %v", ErrMalformed, err)
@@ -259,7 +267,7 @@ func ParseResponse(body []byte, req Request) (*Response, error) {
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return nil, fmt.Errorf("%w: no \"answers\" field", ErrMalformed)
 	}
-	resp := &Response{Model: top.Model, Answers: map[string]Answer{}}
+	resp := &Response{Model: top.Model, Answers: map[string]Answer{}, Usage: top.Usage}
 	switch trimmed[0] {
 	case '{':
 		if err := json.Unmarshal(trimmed, &resp.Answers); err != nil {

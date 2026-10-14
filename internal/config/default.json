@@ -14,7 +14,9 @@
 
   "state": {
     "include_features": true,
-    "max_text_bytes": 4000
+    "max_text_bytes": 4000,
+    "context_tokens": 2048,
+    "normalize_text": true
   },
 
   "questions": [
@@ -70,7 +72,7 @@
       "dates": 0.10, "entities": 0.10, "term_weight": 0.10
     },
     "feature_saturation": 2,
-    "review": { "unknown_prob": 0.25, "kind_margin": 0.15, "min_confidence": 0.30 }
+    "review": { "unknown_prob": 0.25, "kind_margin": 0.15, "min_confidence": 0.30, "confidence_questions": ["is_datapoint"] }
   },
 
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },

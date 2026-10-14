@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/s0cks/tev1-rank/internal/segment"
 	"github.com/s0cks/tev1-rank/internal/tev1"
@@ -47,6 +48,14 @@ type Config struct {
 type StateConfig struct {
 	IncludeFeatures bool `json:"include_features"`
 	MaxTextBytes    int  `json:"max_text_bytes"`
+	// NormalizeText collapses whitespace/line wraps and strips zero-width
+	// characters in the text sent to the model. The reported segment text and
+	// offsets are never changed.
+	NormalizeText bool `json:"normalize_text"`
+	// ContextTokens is the model's context window, used only to warn when a
+	// request's reported input_tokens gets close to it. It does not affect
+	// what is sent or the question_set_hash.
+	ContextTokens int `json:"context_tokens"`
 }
 
 type RankingConfig struct {
@@ -69,6 +78,11 @@ type ReviewConfig struct {
 	UnknownProb   float64 `json:"unknown_prob"`   // flag when P(unknown) >= this
 	KindMargin    float64 `json:"kind_margin"`    // flag when top-two kind probabilities are closer than this
 	MinConfidence float64 `json:"min_confidence"` // flag when model-reported confidence is below this
+	// ConfidenceQuestions lists the questions whose model-reported confidence
+	// counts towards min_confidence. Ordinal/many-way questions (importance,
+	// kind) report inherently low confidence, so by default only is_datapoint is
+	// used; kind uncertainty is covered by kind_margin instead.
+	ConfidenceQuestions []string `json:"confidence_questions"`
 }
 
 type SelectionConfig struct {
@@ -162,6 +176,11 @@ func (c Config) Validate() error {
 	if !ok || imp.Type != tev1.TypeScore || imp.Levels() < 2 {
 		return fmt.Errorf("config: required question %q must be a score question with 2+ levels", QImportance)
 	}
+	for _, name := range c.Ranking.Review.ConfidenceQuestions {
+		if _, ok := c.Question(name); !ok {
+			return fmt.Errorf("config: ranking.review.confidence_questions names unknown question %q", name)
+		}
+	}
 	w := c.Ranking.Weights
 	if w.Datapoint < 0 || w.Importance < 0 || w.Kind < 0 || w.Features < 0 || w.Datapoint+w.Importance+w.Kind+w.Features <= 0 {
 		return fmt.Errorf("config: ranking weights must be non-negative and not all zero")
@@ -181,7 +200,7 @@ func has(ss []string, s string) bool {
 // StateFormat identifies the shape of the state sent to the model. It is part
 // of the question-set hash so that changing it invalidates cached answers.
 func (c Config) StateFormat() string {
-	return fmt.Sprintf("state/v1;features=%t;max_text_bytes=%d", c.State.IncludeFeatures, c.State.MaxTextBytes)
+	return fmt.Sprintf("state/v2;features=%t;max_text_bytes=%d;normalize=%t", c.State.IncludeFeatures, c.State.MaxTextBytes, c.State.NormalizeText)
 }
 
 // QuestionSetHash is "sha256:<hex>" over the model name, the ordered questions
@@ -194,4 +213,30 @@ func (c Config) QuestionSetHash() string {
 	}{c.Model, c.QuestionSet(), c.StateFormat()})
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// Warnings returns non-fatal configuration problems worth showing the user.
+func (c Config) Warnings() []string {
+	var w []string
+	kq, _ := c.Question(QKind)
+	opts := kq.Options()
+	var missing, stale []string
+	for _, o := range opts {
+		if _, ok := c.Ranking.KindWeights[o]; !ok {
+			missing = append(missing, o)
+		}
+	}
+	for k := range c.Ranking.KindWeights {
+		if !has(opts, k) {
+			stale = append(stale, k)
+		}
+	}
+	sort.Strings(stale)
+	if len(missing) > 0 {
+		w = append(w, fmt.Sprintf("kind options %v have no ranking.kind_weights entry, so they all use default_kind_weight (%.2f) and the kind term cannot separate them", missing, c.Ranking.DefaultKindWeight))
+	}
+	if len(stale) > 0 {
+		w = append(w, fmt.Sprintf("ranking.kind_weights entries %v match no kind option and are ignored (kind_weights are merged with the embedded defaults, not replaced)", stale))
+	}
+	return w
 }

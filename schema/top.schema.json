@@ -87,7 +87,7 @@
             "p_unknown": { "type": "number", "minimum": 0, "maximum": 1 },
             "importance": { "type": "number", "description": "Expected importance on the configured scale, 1..N (1..5 by default)." },
             "kind_probs": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
-            "confidence": { "type": ["number", "null"], "description": "Lowest model-reported confidence across the answers, if reported." }
+            "confidence": { "type": ["number", "null"], "description": "Lowest model-reported confidence among ranking.review.confidence_questions (default: is_datapoint only), if reported." }
           }
         }
       }

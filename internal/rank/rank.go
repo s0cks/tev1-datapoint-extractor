@@ -26,7 +26,7 @@ type Signals struct {
 	KindProbs      map[string]float64 `json:"kind_probs"`
 	KindWeight     float64            `json:"kind_weight"`          // probability-weighted per-kind weight
 	KindMargin     float64            `json:"kind_margin"`          // gap between the two most likely kinds
-	Confidence     *float64           `json:"confidence,omitempty"` // lowest model-reported confidence among the answers
+	Confidence     *float64           `json:"confidence,omitempty"` // lowest model confidence among ranking.review.confidence_questions
 	datapointNoul  bool
 }
 
@@ -35,8 +35,12 @@ type Signals struct {
 // the basics).
 func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, error) {
 	var s Signals
-	minConf := func(c *float64) {
-		if c != nil && (s.Confidence == nil || *c < *s.Confidence) {
+	confQ := map[string]bool{}
+	for _, q := range cfg.Ranking.Review.ConfidenceQuestions {
+		confQ[q] = true
+	}
+	minConf := func(question string, c *float64) {
+		if confQ[question] && c != nil && (s.Confidence == nil || *c < *s.Confidence) {
 			v := *c
 			s.Confidence = &v
 		}
@@ -62,7 +66,7 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 			s.PUnknown = 1
 		}
 	}
-	minConf(da.Confidence)
+	minConf(config.QIsDatapoint, da.Confidence)
 
 	ka, ok := ans[config.QKind]
 	if !ok {
@@ -84,7 +88,7 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 		}
 	}
 	s.KindMargin = top1 - top2
-	minConf(ka.Confidence)
+	minConf(config.QKind, ka.Confidence)
 
 	iq, _ := cfg.Question(config.QImportance)
 	ia, ok := ans[config.QImportance]
@@ -94,7 +98,7 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 	levels := iq.Levels()
 	s.Importance = *ia.Score + 1
 	s.ImportanceNorm = clamp01(*ia.Score / float64(levels-1))
-	minConf(ia.Confidence)
+	minConf(config.QImportance, ia.Confidence)
 	return s, nil
 }
 

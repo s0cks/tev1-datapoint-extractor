@@ -1,8 +1,54 @@
 {
   "model": "tev1:0.8b",
   "answers": {
-    "is_datapoint": {"type":"choice","choice":"yes","probabilities":{"yes":0.93,"no":0.05,"unknown":0.02},"confidence":0.9},
-    "kind": {"type":"choice","choice":"stat","probabilities":{"stat":0.81,"timeline_event":0.04,"comparison":0.05,"quote":0.01,"definition":0.01,"list":0.01,"claim":0.03,"narrative":0.02,"other":0.02},"confidence":0.78},
-    "importance": {"type":"score","score":3.2,"legend":["Trivial","Minor","Moderate","Important","Critical"],"probabilities":{"0":0.01,"1":0.04,"2":0.15,"3":0.6,"4":0.2},"confidence":0.58}
+    "is_datapoint": {
+      "type": "choice",
+      "choice": "yes",
+      "probabilities": {
+        "yes": 0.9945139714227245,
+        "no": 0.003125078793298719,
+        "unknown": 0.002360949783976947
+      },
+      "confidence": 0.9656129934688649
+    },
+    "kind": {
+      "type": "choice",
+      "choice": "stat",
+      "probabilities": {
+        "stat": 0.9940209234794115,
+        "timeline_event": 0.0028507402579830447,
+        "comparison": 0.0012037961312554957,
+        "quote": 0.0006673605804211479,
+        "definition": 0.0005463236040674135,
+        "list": 0.00003720078783499654,
+        "claim": 0.0005638077088677152,
+        "narrative": 0.000007828646193962136,
+        "other": 0.00010201880396460848
+      },
+      "confidence": 0.9793512012766011
+    },
+    "importance": {
+      "type": "score",
+      "score": 1.806477706656209,
+      "legend": {
+        "0": "Trivial",
+        "1": "Minor",
+        "2": "Moderate",
+        "3": "Important",
+        "4": "Critical"
+      },
+      "probabilities": {
+        "0": 0.36834550268246613,
+        "1": 0.009811507299136664,
+        "2": 0.117857002776915,
+        "3": 0.45499175516268636,
+        "4": 0.04899423207879578
+      },
+      "confidence": 0.2722145911529623
+    }
+  },
+  "usage": {
+    "input_tokens": 1803,
+    "output_tokens": 4
   }
 }
