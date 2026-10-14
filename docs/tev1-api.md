@@ -87,6 +87,47 @@ If the real shape differs in some other way (for example `noul` returned as an o
 client returns `ErrMalformed` with a message naming the offending question, and
 `scripts/capture-fixtures.sh` plus the fixture tests will show exactly where.
 
+## Context budget (measured)
+
+`usage.input_tokens` is reported per call and is large relative to the ~2k-token context:
+
+| measurement | input_tokens |
+|---|---|
+| real, 3 short questions + ~25-word segment (`testdata/api/classify.*`) | 1803 |
+| real run, default questions, 8 segments (1.4 KB of prose), tev1:0.8b | 17325 total, ≈ 2166 per call |
+
+So the fixed cost of the questions (plus whatever template the server wraps around them) is
+already at or over 2048 before any segment text. It is **not yet known** whether the server
+then truncates the prompt silently, errors, or uses a larger window than documented. Answers from
+that run look degraded (very high P(unknown), odd kinds), which is consistent with truncation.
+
+What the tool does about it:
+
+- `scored.jsonl` records `input_tokens` / `output_tokens` per segment (kept in the cache).
+- A segment whose `input_tokens` exceeds `state.context_tokens` (default 2048) gets
+  `context_exceeded: true`, the review reason `context_window_exceeded`, and `needs_review`.
+  `run.json` counts them in `counts.context_exceeded`.
+- `scripts/measure-tokens.sh` sends a few probes and reports the fixed cost, whether tokens scale
+  with the number of questions (separate passes), and how many bytes of segment text fit.
+
+Options to fix it (try in this order):
+
+1. **Raise the context of a derived model** (plain Ollama feature; no tool change):
+
+   ```
+   # Modelfile
+   FROM tev1:0.8b
+   PARAMETER num_ctx 8192
+   ```
+   `ollama create tev1-8k -f Modelfile`, then `tev1-rank rank ... --model tev1-8k`. Check with
+   `ollama ps` (context column) and by comparing answers for the same segments: if the original
+   was truncating, they will change noticeably. Whether `/v1/systemone` honours a model's
+   `num_ctx` has not been verified; the request body is not documented to accept options.
+2. **Shorten the questions** (fewer/shorter options and descriptions), especially if tokens
+   scale with the number of questions.
+3. **Ask fewer questions per request** (not implemented): e.g. one request for `is_datapoint`
+   and another for `kind` + `importance`.
+
 ## Errors and retries
 
 - HTTP 429 and 5xx, network errors and per-attempt timeouts are retried with exponential backoff

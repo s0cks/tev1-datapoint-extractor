@@ -58,7 +58,7 @@
         "needs_review": { "type": "boolean" },
         "review_reasons": {
           "type": "array",
-          "items": { "enum": ["high_unknown_probability", "datapoint_uncertain", "kind_top_two_close", "low_confidence", "model_error"] }
+          "items": { "enum": ["high_unknown_probability", "datapoint_uncertain", "kind_top_two_close", "low_confidence", "context_window_exceeded", "model_error"] }
         },
         "features": {
           "type": "object",

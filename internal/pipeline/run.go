@@ -85,17 +85,18 @@ type SelectionInfo struct {
 	MaxPerKind int     `json:"max_per_kind"`
 }
 type Counts struct {
-	Segments     int `json:"segments"`
-	Duplicates   int `json:"duplicates"`
-	Ranked       int `json:"ranked"`
-	Selected     int `json:"selected"`
-	NeedsReview  int `json:"needs_review"`
-	ModelCalls   int `json:"model_calls"`
-	CacheHits    int `json:"cache_hits"`
-	CacheMisses  int `json:"cache_misses"`
-	ModelErrors  int `json:"model_errors"`
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	Segments        int `json:"segments"`
+	Duplicates      int `json:"duplicates"`
+	Ranked          int `json:"ranked"`
+	Selected        int `json:"selected"`
+	NeedsReview     int `json:"needs_review"`
+	ModelCalls      int `json:"model_calls"`
+	CacheHits       int `json:"cache_hits"`
+	CacheMisses     int `json:"cache_misses"`
+	ModelErrors     int `json:"model_errors"`
+	ContextExceeded int `json:"context_exceeded"` // segments whose reported input_tokens exceeded state.context_tokens
+	InputTokens     int `json:"input_tokens"`
+	OutputTokens    int `json:"output_tokens"`
 }
 type Timings struct {
 	Segment   int64 `json:"segment"`
@@ -211,7 +212,7 @@ func Run(ctx context.Context, opt Options) (*Result, error) {
 	m.Counts = Counts{
 		Segments: len(recs), Selected: len(chosen), ModelCalls: stats.ModelCalls,
 		CacheHits: stats.CacheHits, CacheMisses: stats.CacheMisses, ModelErrors: stats.Errors,
-		InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
+		ContextExceeded: stats.ContextExceeded, InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
 	}
 	for _, r := range recs {
 		if r.Rank == nil {

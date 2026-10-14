@@ -38,6 +38,14 @@ go test ./...
 go test -tags integration ./internal/pipeline -run Live -v
 ```
 
+## Context window
+
+tev1's context is small (~2k tokens) and the question set alone costs about that much, so
+segments can overflow it. Every segment records its `input_tokens`; overflowing ones are flagged
+`context_exceeded` / `needs_review`. Run `scripts/measure-tokens.sh` to see where the tokens go,
+and see "Context budget" in [docs/tev1-api.md](docs/tev1-api.md) for fixes (derived model with a
+larger `num_ctx`, shorter questions).
+
 ## Layout
 
 | path | purpose |

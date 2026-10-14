@@ -24,6 +24,7 @@ type Cache struct {
 type entry struct {
 	Version int                    `json:"version"`
 	Answers map[string]tev1.Answer `json:"answers"`
+	Usage   tev1.Usage             `json:"usage,omitempty"` // tokens the original call used (0 if unknown)
 }
 
 // Key builds the cache key.
@@ -42,25 +43,25 @@ func (c *Cache) path(key string) string {
 }
 
 // Get returns the cached answers. Unreadable or corrupt entries are misses.
-func (c *Cache) Get(key string) (map[string]tev1.Answer, bool) {
+func (c *Cache) Get(key string) (map[string]tev1.Answer, tev1.Usage, bool) {
 	b, err := os.ReadFile(c.path(key))
 	if err != nil {
-		return nil, false
+		return nil, tev1.Usage{}, false
 	}
 	var e entry
 	if json.Unmarshal(b, &e) != nil || e.Version != entryVersion || len(e.Answers) == 0 {
-		return nil, false
+		return nil, tev1.Usage{}, false
 	}
-	return e.Answers, true
+	return e.Answers, e.Usage, true
 }
 
 // Put stores answers atomically (write to a temp file, then rename).
-func (c *Cache) Put(key string, answers map[string]tev1.Answer) error {
+func (c *Cache) Put(key string, answers map[string]tev1.Answer, usage tev1.Usage) error {
 	p := c.path(key)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	b, err := json.Marshal(entry{Version: entryVersion, Answers: answers})
+	b, err := json.Marshal(entry{Version: entryVersion, Answers: answers, Usage: usage})
 	if err != nil {
 		return err
 	}

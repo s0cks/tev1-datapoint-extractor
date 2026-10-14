@@ -56,7 +56,7 @@ counts for confidence: `importance` (5-level ordinal) and `kind` (many-way) repo
 confidence and would flag every segment.
 
 `review_reasons` values: `high_unknown_probability`, `datapoint_uncertain` (noul questions only),
-`kind_top_two_close`, `low_confidence`, `model_error` (that segment fell back to feature scoring).
+`kind_top_two_close`, `low_confidence`, `context_window_exceeded`, `model_error` (that segment fell back to feature scoring).
 
 Items are never duplicates: near-identical segments (same text after lower-casing and removing
 punctuation/spacing) are collapsed, keeping the first occurrence.
@@ -71,6 +71,8 @@ punctuation/spacing) are collapsed, keeping the first occurrence.
 | `answers` | **raw model answers**: `{ "<question>": { "choice" / "noul" / "score", "probabilities", "legend", "confidence" } }`. Omitted unless `scored_by` is `model`. |
 | `signals` | derived values: `p_datapoint`, `p_unknown`, `importance`, `importance_norm`, `kind`, `kind_probs`, `kind_weight`, `kind_margin`, `confidence` |
 | `cached` | answers came from the on-disk cache |
+| `input_tokens`, `output_tokens` | what the server reported for the call that produced the answers (cached hits report the original call's values) |
+| `context_exceeded` | `input_tokens` > `state.context_tokens`; the prompt may have been truncated, so the answers are unreliable |
 | `state_truncated` | segment text exceeded `state.max_text_bytes` and was cut before being sent |
 | `model_error` | error text when `scored_by` is `features_fallback` |
 | `feature_bonus` | 0..1 weighted feature score |
@@ -112,7 +114,7 @@ set to zero, so it sinks rather than floats to the top.
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
   "counts": { "segments": 26, "duplicates": 1, "ranked": 25, "selected": 20, "needs_review": 3,
               "model_calls": 25, "cache_hits": 1, "cache_misses": 25, "model_errors": 0,
-              "input_tokens": 45075, "output_tokens": 100 },       // summed over model calls, as reported by the server
+              "context_exceeded": 0, "input_tokens": 45075, "output_tokens": 100 },       // summed over model calls, as reported by the server
   "timings_ms": { "segment": 1, "preflight": 12, "classify": 8123, "total": 8140, "model_calls_sum": 8090 },
   "outputs": { "scored": "scored.jsonl", "top": "top.json" }
 }

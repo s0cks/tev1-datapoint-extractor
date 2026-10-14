@@ -37,6 +37,7 @@ type fakeOllama struct {
 	version string
 	models  []string
 	failAll bool
+	tokens  int // input_tokens to report (0 = omit usage)
 }
 
 func newFake(t *testing.T) *fakeOllama {
@@ -68,12 +69,16 @@ func newFake(t *testing.T) *fakeOllama {
 			if stat {
 				yes, kind, score = 0.92, "stat", 3.6
 			}
-			json.NewEncoder(w).Encode(map[string]any{"model": "tev1:0.8b", "answers": map[string]any{
+			resp := map[string]any{"model": "tev1:0.8b", "answers": map[string]any{
 				"is_datapoint": map[string]any{"choice": map[bool]string{true: "yes", false: "no"}[stat],
 					"probabilities": map[string]float64{"yes": yes, "no": 0.93 - yes, "unknown": 0.07}, "confidence": 0.8},
 				"kind":       map[string]any{"choice": kind, "probabilities": map[string]float64{kind: 0.85, "other": 0.15}, "confidence": 0.8},
 				"importance": map[string]any{"score": score, "confidence": 0.7},
-			}})
+			}}
+			if f.tokens > 0 {
+				resp["usage"] = map[string]int{"input_tokens": f.tokens, "output_tokens": 4}
+			}
+			json.NewEncoder(w).Encode(resp)
 		default:
 			http.NotFound(w, r)
 		}
@@ -407,4 +412,60 @@ func TestStateIsNormalisedButRecordIsVerbatim(t *testing.T) {
 	if o2.Config.QuestionSetHash() == o.Config.QuestionSetHash() {
 		t.Error("normalize_text must be part of the question set hash")
 	}
+}
+
+func TestContextExceededIsRecordedFlaggedAndCached(t *testing.T) {
+	f := newFake(t)
+	f.tokens = 2166 // above the default 2048 window
+	dir := t.TempDir()
+	in := writeInput(t, dir, sampleDoc)
+	res, err := Run(context.Background(), opts(t, f, dir, in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Manifest.Counts.ContextExceeded == 0 || res.Manifest.Counts.InputTokens < 2166*4 {
+		t.Errorf("counts = %+v", res.Manifest.Counts)
+	}
+	for _, r := range readRecords(t, dir) {
+		if r["context_exceeded"] != true || r["input_tokens"].(float64) != 2166 || r["needs_review"] != true {
+			t.Errorf("record not flagged: %v", r)
+		}
+		if !strings.Contains(strings.Join(toStrings(r["review_reasons"]), ","), "context_window_exceeded") {
+			t.Errorf("reason missing: %v", r["review_reasons"])
+		}
+	}
+	// A cached rerun must still know the original token count.
+	atomic.StoreInt32(&f.calls, 0)
+	if _, err := Run(context.Background(), opts(t, f, dir, in)); err != nil {
+		t.Fatal(err)
+	}
+	if f.calls != 0 {
+		t.Fatalf("expected cache hits, got %d calls", f.calls)
+	}
+	for _, r := range readRecords(t, dir) {
+		if r["context_exceeded"] != true || r["cached"] != true {
+			t.Errorf("cached record lost the flag: %v", r)
+		}
+	}
+	// Under the window: no flag.
+	f.tokens = 1500
+	dir2 := t.TempDir()
+	if _, err := Run(context.Background(), opts(t, f, dir2, writeInput(t, dir2, sampleDoc))); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range readRecords(t, dir2) {
+		if r["context_exceeded"] != nil {
+			t.Errorf("flagged under the window: %v", r)
+		}
+	}
+}
+
+func toStrings(v any) []string {
+	var out []string
+	if arr, ok := v.([]any); ok {
+		for _, x := range arr {
+			out = append(out, x.(string))
+		}
+	}
+	return out
 }

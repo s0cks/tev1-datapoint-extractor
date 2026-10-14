@@ -50,7 +50,14 @@ type Record struct {
 	Signals        *rank.Signals          `json:"signals,omitempty"`
 	Cached         bool                   `json:"cached"`
 	StateTruncated bool                   `json:"state_truncated,omitempty"`
-	ModelError     string                 `json:"model_error,omitempty"`
+	// InputTokens/OutputTokens are what the server reported for the call that
+	// produced these answers (kept in the cache, so cached hits report them too).
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
+	// ContextExceeded: InputTokens is above state.context_tokens, so the prompt
+	// may have been truncated by the server and the answers are unreliable.
+	ContextExceeded bool   `json:"context_exceeded,omitempty"`
+	ModelError      string `json:"model_error,omitempty"`
 
 	FeatureBonus  float64  `json:"feature_bonus"`
 	FinalScore    float64  `json:"final_score"`
@@ -73,13 +80,14 @@ func (r Record) Kind() string {
 
 // Stats are counters collected while classifying.
 type Stats struct {
-	ModelCalls   int           `json:"model_calls"`
-	CacheHits    int           `json:"cache_hits"`
-	CacheMisses  int           `json:"cache_misses"`
-	Errors       int           `json:"errors"`
-	InputTokens  int           `json:"input_tokens"` // summed over model calls (as reported by the server)
-	OutputTokens int           `json:"output_tokens"`
-	ModelTime    time.Duration `json:"-"`
+	ModelCalls      int           `json:"model_calls"`
+	CacheHits       int           `json:"cache_hits"`
+	CacheMisses     int           `json:"cache_misses"`
+	Errors          int           `json:"errors"`
+	ContextExceeded int           `json:"context_exceeded"`
+	InputTokens     int           `json:"input_tokens"` // summed over model calls (as reported by the server)
+	OutputTokens    int           `json:"output_tokens"`
+	ModelTime       time.Duration `json:"-"`
 }
 
 // Classifier classifies segments with tev1, using the cache when enabled.
@@ -183,7 +191,7 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 					continue
 				}
 				rec := &recs[i]
-				ans, sig, cached, err := cl.classifyOne(ctx, segs[i], feats[i], rec)
+				ans, sig, usage, cached, err := cl.classifyOne(ctx, segs[i], feats[i], rec)
 				if err != nil {
 					if ctx.Err() != nil {
 						continue
@@ -204,6 +212,12 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 				rec.ScoredBy = ScoredByModel
 				rec.FinalScore = round6(rank.Score(cfg.Ranking, sig, rec.FeatureBonus))
 				rec.ReviewReasons = rank.Review(cfg.Ranking.Review, sig)
+				rec.InputTokens, rec.OutputTokens = usage.InputTokens, usage.OutputTokens
+				if ctxTok := cfg.State.ContextTokens; ctxTok > 0 && usage.InputTokens > ctxTok {
+					rec.ContextExceeded = true
+					rec.ReviewReasons = append(rec.ReviewReasons, "context_window_exceeded")
+					cl.add(func(s *Stats) { s.ContextExceeded++ })
+				}
 				rec.NeedsReview = len(rec.ReviewReasons) > 0
 				if n := atomic.AddInt32(&done, 1); n%25 == 0 {
 					cl.log().Info("progress", "classified", n, "of", len(segs))
@@ -230,15 +244,15 @@ loop:
 	return recs, nil
 }
 
-func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f features.Features, rec *Record) (map[string]tev1.Answer, rank.Signals, bool, error) {
+func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f features.Features, rec *Record) (map[string]tev1.Answer, rank.Signals, tev1.Usage, bool, error) {
 	st, truncated := cl.buildState(seg.Text, f)
 	rec.StateTruncated = truncated
 	key := cache.Key(cl.Cfg.Model, cl.qsHash, seg.Hash)
 	if cl.Cache != nil {
-		if ans, ok := cl.Cache.Get(key); ok {
+		if ans, usage, ok := cl.Cache.Get(key); ok {
 			if sig, err := rank.ExtractSignals(cl.Cfg, ans); err == nil {
 				cl.add(func(s *Stats) { s.CacheHits++ })
-				return ans, sig, true, nil
+				return ans, sig, usage, true, nil
 			}
 			// A cached entry that no longer satisfies the config is just a miss.
 		}
@@ -250,19 +264,19 @@ func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f fe
 	})
 	cl.add(func(s *Stats) { s.ModelCalls++; s.ModelTime += time.Since(start) })
 	if err != nil {
-		return nil, rank.Signals{}, false, err
+		return nil, rank.Signals{}, tev1.Usage{}, false, err
 	}
 	cl.noteUsage(resp.Usage)
 	sig, err := rank.ExtractSignals(cl.Cfg, resp.Answers)
 	if err != nil {
-		return nil, rank.Signals{}, false, fmt.Errorf("%w: %v", tev1.ErrMalformed, err)
+		return nil, rank.Signals{}, tev1.Usage{}, false, fmt.Errorf("%w: %v", tev1.ErrMalformed, err)
 	}
 	if cl.Cache != nil {
-		if err := cl.Cache.Put(key, resp.Answers); err != nil {
+		if err := cl.Cache.Put(key, resp.Answers, resp.Usage); err != nil {
 			cl.log().Warn("cache write failed", "err", err)
 		}
 	}
-	return resp.Answers, sig, false, nil
+	return resp.Answers, sig, resp.Usage, false, nil
 }
 
 // Finalize ranks the records, removes near-duplicates, and marks the selection.
