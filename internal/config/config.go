@@ -134,7 +134,9 @@ func (c Config) Question(name string) (tev1.NamedQuestion, bool) {
 }
 
 // QuestionSet returns the questions in request form.
-func (c Config) QuestionSet() tev1.QuestionSet { return tev1.QuestionSet(c.Questions) }
+func (c Config) QuestionSet() tev1.QuestionSet {
+	return tev1.QuestionSet(c.Questions)
+}
 
 // Validate checks that the three required questions exist with usable types.
 func (c Config) Validate() error {
@@ -168,23 +170,23 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("config: %q must be type noul or choice, not %q", QIsDatapoint, dp.Type)
 	}
-	k, ok := c.Question(QKind)
-	if !ok || k.Type != tev1.TypeChoice || len(k.Options()) < 2 {
-		return fmt.Errorf("config: required question %q must be a choice question with 2+ options", QKind)
-	}
-	imp, ok := c.Question(QImportance)
-	if !ok || imp.Type != tev1.TypeScore || imp.Levels() < 2 {
-		return fmt.Errorf("config: required question %q must be a score question with 2+ levels", QImportance)
-	}
-	for _, name := range c.Ranking.Review.ConfidenceQuestions {
-		if _, ok := c.Question(name); !ok {
-			return fmt.Errorf("config: ranking.review.confidence_questions names unknown question %q", name)
-		}
-	}
-	w := c.Ranking.Weights
-	if w.Datapoint < 0 || w.Importance < 0 || w.Kind < 0 || w.Features < 0 || w.Datapoint+w.Importance+w.Kind+w.Features <= 0 {
-		return fmt.Errorf("config: ranking weights must be non-negative and not all zero")
-	}
+	// k, ok := c.Question(QKind)
+	// if !ok || k.Type != tev1.TypeChoice || len(k.Options()) < 2 {
+	// 	return fmt.Errorf("config: required question %q must be a choice question with 2+ options", QKind)
+	// }
+	// imp, ok := c.Question(QImportance)
+	// if !ok || imp.Type != tev1.TypeScore || imp.Levels() < 2 {
+	// 	return fmt.Errorf("config: required question %q must be a score question with 2+ levels", QImportance)
+	// }
+	// for _, name := range c.Ranking.Review.ConfidenceQuestions {
+	// 	if _, ok := c.Question(name); !ok {
+	// 		return fmt.Errorf("config: ranking.review.confidence_questions names unknown question %q", name)
+	// 	}
+	// }
+	// w := c.Ranking.Weights
+	// if w.Datapoint < 0 || w.Importance < 0 || w.Kind < 0 || w.Features < 0 || w.Datapoint+w.Importance+w.Kind+w.Features <= 0 {
+	// 	return fmt.Errorf("config: ranking weights must be non-negative and not all zero")
+	// }
 	return nil
 }
 

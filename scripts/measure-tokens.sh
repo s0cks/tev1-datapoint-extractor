@@ -20,10 +20,10 @@ done
 case "$URL" in http*) ;; *) URL="http://$URL" ;; esac
 cd "$(dirname "$0")/.."
 
-if [[ -n $CONFIG ]]; then CFG=$(cat "$CONFIG"); else CFG=$(./bin/tev1-rank config); fi
+if [[ -n $CONFIG ]]; then CFG=$(cat "$CONFIG"); else CFG=$(./tev1-rank config); fi
 # A config file may be a partial override; fall back to defaults for anything missing.
 if [[ -n $CONFIG ]]; then
-  DEF=$(./bin/tev1-rank config)
+  DEF=$(./tev1-rank config)
   CFG=$(jq -s '.[0] * .[1] | .questions = (.[1].questions // .[0].questions)' <(echo "$DEF") <(echo "$CFG") 2>/dev/null || echo "$CFG")
 fi
 [[ -n $MODEL ]] || MODEL=$(jq -r .model <<<"$CFG")
@@ -40,16 +40,20 @@ TXT800=$(for i in 1 2 3 4; do printf '%s ' "$TXT200"; done | head -c 800)
 
 echo "model: $MODEL   ollama: $URL   assumed context: $CTX tokens"
 echo
-all_short=$(probe "$QS" "$SHORT");  echo "all questions, 1-byte state : $all_short"
+all_short=$(probe "$QS" "$SHORT")
+echo "all questions, 1-byte state : $all_short"
 sum_single=0
 for name in $(jq -r '.questions[].name' <<<"$CFG"); do
   one=$(jq -c --arg n "$name" '{($n): .[$n]}' <<<"$QS")
-  t=$(probe "$one" "$SHORT"); sum_single=$((sum_single + t))
+  t=$(probe "$one" "$SHORT")
+  sum_single=$((sum_single + t))
   printf '  question %-14s alone     : %s\n' "$name" "$t"
 done
 echo "  sum of questions alone       : $sum_single   (≈ all-questions figure ⇒ every question is a separate pass over the prompt)"
-t200=$(probe "$QS" "$TXT200"); echo "all questions, 200-byte state: $t200"
-t800=$(probe "$QS" "$TXT800"); echo "all questions, 800-byte state: $t800"
+t200=$(probe "$QS" "$TXT200")
+echo "all questions, 200-byte state: $t200"
+t800=$(probe "$QS" "$TXT800")
+echo "all questions, 800-byte state: $t800"
 
 awk -v a="$all_short" -v b="$t200" -v c="$t800" -v ctx="$CTX" 'BEGIN{
   per=(c-b)/600.0; if (per<=0) per=0.0001

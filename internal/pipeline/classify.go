@@ -4,6 +4,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -190,12 +191,14 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 				if ctx.Err() != nil {
 					continue
 				}
+
 				rec := &recs[i]
 				ans, sig, usage, cached, err := cl.classifyOne(ctx, segs[i], feats[i], rec)
 				if err != nil {
 					if ctx.Err() != nil {
 						continue
 					}
+
 					cl.add(func(s *Stats) { s.Errors++ })
 					cl.log().Error("classification failed; falling back to features", "segment", rec.ID, "err", err)
 					rec.ScoredBy, rec.ModelError = ScoredByFallback, err.Error()
@@ -207,6 +210,7 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 					}
 					continue
 				}
+
 				atomic.StoreInt32(&consecutive, 0)
 				rec.Answers, rec.Signals, rec.Cached = ans, &sig, cached
 				rec.ScoredBy = ScoredByModel
@@ -218,6 +222,7 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 					rec.ReviewReasons = append(rec.ReviewReasons, "context_window_exceeded")
 					cl.add(func(s *Stats) { s.ContextExceeded++ })
 				}
+
 				rec.NeedsReview = len(rec.ReviewReasons) > 0
 				if n := atomic.AddInt32(&done, 1); n%25 == 0 {
 					cl.log().Info("progress", "classified", n, "of", len(segs))
@@ -254,11 +259,54 @@ func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f fe
 				cl.add(func(s *Stats) { s.CacheHits++ })
 				return ans, sig, usage, true, nil
 			}
+
 			// A cached entry that no longer satisfies the config is just a miss.
 		}
+
 		cl.add(func(s *Stats) { s.CacheMisses++ })
 	}
+
+	cl.log().Info("processing...", "state", st)
 	start := time.Now()
+
+	{
+		cl.log().Info("checking if datapoint")
+		var q tev1.NamedQuestion
+		questionStr := `
+    {
+			"name": "is_datapoint",
+      "type": "choice",
+      "instructions": "Does the segment contain a concrete, quantifiable or checkable fact (a specific number, date, name, measurement or event that could be verified)?",
+      "criteria": {
+        "yes": "It states at least one specific, checkable fact such as a number, date, amount, measurement or named event.",
+        "no": "It is general, vague, rhetorical or purely descriptive, with nothing concrete to check.",
+        "unknown": "The text is too fragmentary or ambiguous to judge."
+      }
+    }
+	`
+		if err := json.Unmarshal([]byte(questionStr), &q); err != nil {
+			return nil, rank.Signals{}, tev1.Usage{}, false, err
+		}
+
+		resp, err := cl.Client.Decide(ctx, tev1.Request{
+			Model: cl.Cfg.Model, State: st, Questions: tev1.QuestionSet{
+				q,
+			}, KeepAlive: cl.Cfg.KeepAlive,
+		})
+
+		if err != nil {
+			return nil, rank.Signals{}, tev1.Usage{}, false, err
+		}
+
+		sig, err := rank.ExtractSignals(cl.Cfg, resp.Answers)
+		cl.log().Info(fmt.Sprintf("datapoint?: %f", sig.PDatapoint))
+
+		if sig.PDatapoint < 0.5 {
+			return nil, rank.Signals{}, tev1.Usage{}, false, nil
+		}
+	}
+
+	cl.log().Info("running classification")
 	resp, err := cl.Client.Decide(ctx, tev1.Request{
 		Model: cl.Cfg.Model, State: st, Questions: cl.Cfg.QuestionSet(), KeepAlive: cl.Cfg.KeepAlive,
 	})
@@ -266,16 +314,20 @@ func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f fe
 	if err != nil {
 		return nil, rank.Signals{}, tev1.Usage{}, false, err
 	}
+
 	cl.noteUsage(resp.Usage)
+	cl.log().Info("done", "state", st)
 	sig, err := rank.ExtractSignals(cl.Cfg, resp.Answers)
 	if err != nil {
 		return nil, rank.Signals{}, tev1.Usage{}, false, fmt.Errorf("%w: %v", tev1.ErrMalformed, err)
 	}
+
 	if cl.Cache != nil {
 		if err := cl.Cache.Put(key, resp.Answers, resp.Usage); err != nil {
 			cl.log().Warn("cache write failed", "err", err)
 		}
 	}
+
 	return resp.Answers, sig, resp.Usage, false, nil
 }
 

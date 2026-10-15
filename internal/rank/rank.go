@@ -39,6 +39,7 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 	for _, q := range cfg.Ranking.Review.ConfidenceQuestions {
 		confQ[q] = true
 	}
+
 	minConf := func(question string, c *float64) {
 		if confQ[question] && c != nil && (s.Confidence == nil || *c < *s.Confidence) {
 			v := *c
@@ -51,12 +52,14 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 	if !ok {
 		return s, fmt.Errorf("no answer for %q", config.QIsDatapoint)
 	}
+
 	switch dq.Type {
 	case tev1.TypeNoul:
 		if da.Noul == nil {
 			return s, fmt.Errorf("%q: missing noul probability", config.QIsDatapoint)
 		}
 		s.PDatapoint, s.datapointNoul = *da.Noul, true
+
 	default:
 		if len(da.Probabilities) > 0 {
 			s.PDatapoint, s.PUnknown = da.Probabilities["yes"], da.Probabilities["unknown"]
@@ -66,39 +69,41 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 			s.PUnknown = 1
 		}
 	}
+
 	minConf(config.QIsDatapoint, da.Confidence)
 
 	ka, ok := ans[config.QKind]
-	if !ok {
-		return s, fmt.Errorf("no answer for %q", config.QKind)
-	}
-	s.Kind = ka.Choice
-	s.KindProbs = normalise(ka.Probabilities, ka.Choice)
-	top1, top2 := 0.0, 0.0
-	for k, p := range s.KindProbs {
-		w, ok := cfg.Ranking.KindWeights[k]
-		if !ok {
-			w = cfg.Ranking.DefaultKindWeight
+	if ok {
+		s.Kind = ka.Choice
+		s.KindProbs = normalise(ka.Probabilities, ka.Choice)
+		top1, top2 := 0.0, 0.0
+		for k, p := range s.KindProbs {
+			w, ok := cfg.Ranking.KindWeights[k]
+			if !ok {
+				w = cfg.Ranking.DefaultKindWeight
+			}
+
+			s.KindWeight += p * w
+			if p > top1 {
+				top1, top2 = p, top1
+			} else if p > top2 {
+				top2 = p
+			}
 		}
-		s.KindWeight += p * w
-		if p > top1 {
-			top1, top2 = p, top1
-		} else if p > top2 {
-			top2 = p
-		}
+
+		s.KindMargin = top1 - top2
+		minConf(config.QKind, ka.Confidence)
 	}
-	s.KindMargin = top1 - top2
-	minConf(config.QKind, ka.Confidence)
 
 	iq, _ := cfg.Question(config.QImportance)
 	ia, ok := ans[config.QImportance]
-	if !ok || ia.Score == nil {
-		return s, fmt.Errorf("no score for %q", config.QImportance)
+	if ok && ia.Score != nil {
+		levels := iq.Levels()
+		s.Importance = *ia.Score + 1
+		s.ImportanceNorm = clamp01(*ia.Score / float64(levels-1))
+		minConf(config.QImportance, ia.Confidence)
 	}
-	levels := iq.Levels()
-	s.Importance = *ia.Score + 1
-	s.ImportanceNorm = clamp01(*ia.Score / float64(levels-1))
-	minConf(config.QImportance, ia.Confidence)
+
 	return s, nil
 }
 

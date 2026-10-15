@@ -35,15 +35,15 @@
       "type": "choice",
       "instructions": "Which kind of statement is this segment?",
       "criteria": {
-        "stat": "A statistic or measurement: a quantity, rate, percentage, amount or count.",
-        "timeline_event": "Something that happened or will happen at a specific time or in a sequence.",
-        "comparison": "Compares two or more things, or contrasts before and after.",
-        "quote": "Reported speech or a direct quotation attributed to someone.",
-        "definition": "Defines or explains what a term or concept means.",
-        "list": "A list or enumeration of items or steps.",
-        "claim": "An assertion, argument or opinion that is not itself a measured fact.",
-        "narrative": "Storytelling, scene-setting or descriptive prose.",
-        "other": "None of the above."
+        "stat": "A statistic or numerical measurement: an explicit quantity, rate, percentage, amount, or count.",
+        "timeline_event": "Describes a historical occurrence, plot development, action taken, mission, or specific event tied to an era, sequence, or explicit timeframe.",
+        "comparison": "Explicitly contrasts, balances, or links two or more distinct entities, configurations, or operational before-and-after states.",
+        "quote": "Reported speech, verbatim testimonies, or direct quotations explicitly attributed to a source or person.",
+        "definition": "Strictly explains the core meaning, translation, structure, or scope of an abstract concept, technical term, code project, or acronym.",
+        "list": "An explicit enumeration, series of items, or consecutive steps detailed sequentially.",
+        "claim": "An abstract assertion, strategic argument, hypothesis, or speculative opinion that lacks direct empirical data or confirmation.",
+        "narrative": "Storytelling, scene-setting, or background prose tracking psychological reactions, states of being, or environment descriptions without fresh actions.",
+        "other": "None of the above descriptions fit."
       }
     },
     {
@@ -61,18 +61,40 @@
   ],
 
   "ranking": {
-    "weights": { "datapoint": 0.40, "importance": 0.30, "kind": 0.15, "features": 0.15 },
+    "weights": {
+      "datapoint": 0.45,
+      "importance": 0.25,
+      "kind": 0.05,
+      "features": 0.25
+    },
     "kind_weights": {
-      "stat": 1.0, "timeline_event": 0.85, "comparison": 0.9, "quote": 0.5,
-      "definition": 0.5, "list": 0.6, "claim": 0.6, "narrative": 0.2, "other": 0.1
+      "stat": 1.0,
+      "timeline_event": 0.85,
+      "comparison": 0.9,
+      "quote": 0.5,
+      "definition": 0.5,
+      "list": 0.6,
+      "claim": 0.6,
+      "narrative": 0.2,
+      "other": 0.1
     },
     "default_kind_weight": 0.3,
     "feature_weights": {
-      "numbers": 0.20, "percentages": 0.20, "currency": 0.20, "years": 0.10,
-      "dates": 0.10, "entities": 0.10, "term_weight": 0.10
+      "numbers": 0.1,
+      "percentages": 0.1,
+      "currency": 0.1,
+      "years": 0.3,
+      "dates": 0.2,
+      "entities": 0.2,
+      "term_weight": 0.0
     },
     "feature_saturation": 2,
-    "review": { "unknown_prob": 0.25, "kind_margin": 0.15, "min_confidence": 0.30, "confidence_questions": ["is_datapoint"] }
+    "review": {
+      "unknown_prob": 0.4,
+      "kind_margin": 0.05,
+      "min_confidence": 0.15,
+      "confidence_questions": ["is_datapoint"]
+    }
   },
 
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
