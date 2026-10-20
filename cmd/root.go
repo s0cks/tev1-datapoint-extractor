@@ -69,25 +69,32 @@ func (m *modelFlags) load(cmd *cobra.Command) (config.Config, error) {
 	if err != nil {
 		return cfg, err
 	}
+
 	fl := cmd.Flags()
 	if fl.Changed("model") {
 		cfg.Model = m.model
 	}
+
 	switch {
 	case fl.Changed("ollama-url"):
 		cfg.OllamaURL = m.ollamaURL
+
 	case os.Getenv("OLLAMA_HOST") != "" && m.configPath == "":
 		cfg.OllamaURL = normalizeHost(os.Getenv("OLLAMA_HOST"))
 	}
+
 	if fl.Changed("concurrency") {
 		cfg.Concurrency = m.concurrency
 	}
+
 	if fl.Changed("timeout") {
 		cfg.TimeoutSeconds = m.timeoutSec
 	}
+
 	if fl.Changed("retries") {
 		cfg.Retries = m.retries
 	}
+
 	return cfg, cfg.Validate()
 }
 

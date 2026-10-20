@@ -57,18 +57,22 @@ func TestComputeAll(t *testing.T) {
 	if len(fs) != 3 {
 		t.Fatalf("got %d feature rows", len(fs))
 	}
+
 	if fs[0].Position != 0 || !(fs[1].Position > 0 && fs[1].Position < fs[2].Position) {
 		t.Errorf("positions not increasing: %v %v %v", fs[0].Position, fs[1].Position, fs[2].Position)
 	}
+
 	for i, f := range fs {
 		if f.TermWeight < 0 || f.TermWeight > 1 || math.IsNaN(f.TermWeight) {
 			t.Errorf("seg %d: TermWeight %v out of [0,1]", i, f.TermWeight)
 		}
 	}
+
 	// Segments sharing a frequent term should outrank the one-off segment.
 	if !(fs[0].TermWeight > fs[2].TermWeight) {
 		t.Errorf("expected repeated-term segment (%v) > one-off segment (%v)", fs[0].TermWeight, fs[2].TermWeight)
 	}
+
 	if len(ComputeAll(nil, 0)) != 0 {
 		t.Error("empty doc should yield no features")
 	}

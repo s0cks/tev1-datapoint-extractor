@@ -38,6 +38,7 @@ func LoadLabels(path string) ([]Label, error) {
 		return nil, err
 	}
 	defer f.Close()
+
 	return ReadLabels(f)
 }
 
@@ -50,20 +51,25 @@ func ReadLabels(r io.Reader) ([]Label, error) {
 		if line == "" {
 			continue
 		}
+
 		var l Label
 		dec := json.NewDecoder(strings.NewReader(line))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&l); err != nil {
 			return nil, fmt.Errorf("line %d: %w", n, err)
 		}
+
 		if strings.TrimSpace(l.Text) == "" {
 			return nil, fmt.Errorf("line %d: empty text", n)
 		}
+
 		if l.Kind != "" && l.IsDatapoint == (l.Kind == config.KindOther) {
 			return nil, fmt.Errorf("line %d: kind %q contradicts is_datapoint=%t (kind %q means not a datapoint)", n, l.Kind, l.IsDatapoint, config.KindOther)
 		}
+
 		out = append(out, l)
 	}
+
 	return out, sc.Err()
 }
 
@@ -106,6 +112,7 @@ func ratio(num, den int) *float64 {
 	if den == 0 {
 		return nil
 	}
+
 	v := float64(num) / float64(den)
 	return &v
 }
@@ -118,6 +125,7 @@ func Compute(labels []Label, preds []Prediction, ks []int) Report {
 		Kinds:         []KindMetric{},
 		KindConfusion: map[string]map[string]int{},
 	}
+
 	var c Confusion
 	kindCorrect, kindTotal := 0, 0
 	type counts struct{ support, predicted, tp int }
@@ -209,6 +217,7 @@ func Compute(labels []Label, preds []Prediction, ks []int) Report {
 		if k <= 0 || len(order) == 0 {
 			continue
 		}
+
 		kk := min(k, len(order))
 		hit := 0
 		for _, i := range order[:kk] {
@@ -216,8 +225,10 @@ func Compute(labels []Label, preds []Prediction, ks []int) Report {
 				hit++
 			}
 		}
+
 		r.PrecisionAtK[fmt.Sprint(k)] = float64(hit) / float64(kk)
 	}
+
 	return r
 }
 
@@ -231,21 +242,25 @@ func Run(ctx context.Context, cl *pipeline.Classifier, labels []Label, ks []int)
 		segs[i] = segment.Segment{ID: fmt.Sprintf("label-%04d", i+1), Start: 0, End: len(l.Text), Text: l.Text, Hash: h}
 		total += len(l.Text)
 	}
+
 	feats := features.ComputeAll(segs, total)
 	recs, err := cl.BuildRecords(ctx, segs, feats)
 	if err != nil {
 		return Report{}, err
 	}
+
 	pipeline.Finalize(recs, rank.SelectOptions{})
 	preds := make([]Prediction, len(recs))
 	for i, rec := range recs {
 		if rec.Rank != nil {
 			preds[i].Rank = *rec.Rank
 		}
+
 		if rec.Signals != nil {
 			preds[i].OK, preds[i].PDatapoint, preds[i].Kind = true, rec.Signals.PDatapoint, rec.Signals.Kind
 		}
 	}
+
 	rep := Compute(labels, preds, ks)
 	rep.Mode = "model"
 	if cl.NoModel {
@@ -253,6 +268,7 @@ func Run(ctx context.Context, cl *pipeline.Classifier, labels []Label, ks []int)
 	} else {
 		rep.Model = cl.Cfg.Model
 	}
+
 	return rep, nil
 }
 
@@ -263,37 +279,45 @@ func (r Report) Format() string {
 		if p == nil {
 			return "   -  "
 		}
+
 		return fmt.Sprintf("%5.1f%%", *p*100)
 	}
 	fmt.Fprintf(&b, "mode: %s", r.Mode)
 	if r.Model != "" {
 		fmt.Fprintf(&b, "   model: %s", r.Model)
 	}
+
 	fmt.Fprintf(&b, "\nlabels: %d   scored: %d   errors: %d   positives: %d (%.0f%% base rate)\n\n", r.Labels, r.Scored, r.Errors, r.Positives, 100*float64(r.Positives)/float64(max(r.Labels, 1)))
 	if r.Mode == "model" {
 		fmt.Fprintf(&b, "is_datapoint accuracy (kind != other): %s", pct(r.DatapointAccuracy))
 		if r.Confusion != nil {
 			fmt.Fprintf(&b, "   [TP %d  FP %d  TN %d  FN %d]", r.Confusion.TP, r.Confusion.FP, r.Confusion.TN, r.Confusion.FN)
 		}
+
 		fmt.Fprintf(&b, "\nkind accuracy: %s\n\n", pct(r.KindAccuracy))
 		fmt.Fprintf(&b, "%-16s %7s %9s %10s %8s\n", "kind", "support", "predicted", "precision", "recall")
 		for _, k := range r.Kinds {
 			fmt.Fprintf(&b, "%-16s %7d %9d %10s %8s\n", k.Kind, k.Support, k.Predicted, pct(k.Precision), pct(k.Recall))
 		}
+
 		b.WriteByte('\n')
 		b.WriteString(r.formatConfusion())
 	}
+
 	keys := make([]string, 0, len(r.PrecisionAtK))
 	for k := range r.PrecisionAtK {
 		keys = append(keys, k)
 	}
+
 	sort.Slice(keys, func(i, j int) bool {
 		return len(keys[i]) < len(keys[j]) || (len(keys[i]) == len(keys[j]) && keys[i] < keys[j])
 	})
+
 	for _, k := range keys {
 		v := r.PrecisionAtK[k]
 		fmt.Fprintf(&b, "precision@%-3s %5.1f%%\n", k, v*100)
 	}
+
 	return b.String()
 }
 
@@ -303,6 +327,7 @@ func (r Report) formatConfusion() string {
 	if len(r.KindConfusion) == 0 {
 		return ""
 	}
+
 	set := map[string]bool{}
 	for l, row := range r.KindConfusion {
 		set[l] = true
@@ -310,10 +335,12 @@ func (r Report) formatConfusion() string {
 			set[p] = true
 		}
 	}
+
 	kinds := make([]string, 0, len(set))
 	for k := range set {
 		kinds = append(kinds, k)
 	}
+
 	sort.Strings(kinds)
 	var b strings.Builder
 	b.WriteString("kind confusion (rows: labeled, columns: predicted)\n")
@@ -321,11 +348,13 @@ func (r Report) formatConfusion() string {
 	for _, k := range kinds {
 		fmt.Fprintf(&b, " %8.8s", k)
 	}
+
 	b.WriteByte('\n')
 	for _, l := range kinds {
 		if r.KindConfusion[l] == nil {
 			continue
 		}
+
 		fmt.Fprintf(&b, "%-10.10s", l)
 		for _, p := range kinds {
 			if n := r.KindConfusion[l][p]; n > 0 {
@@ -334,8 +363,10 @@ func (r Report) formatConfusion() string {
 				fmt.Fprintf(&b, " %8s", ".")
 			}
 		}
+
 		b.WriteByte('\n')
 	}
+
 	b.WriteByte('\n')
 	return b.String()
 }

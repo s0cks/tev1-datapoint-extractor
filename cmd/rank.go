@@ -33,20 +33,30 @@ With --no-model, ranking uses deterministic features only and the outputs say so
 			if err != nil {
 				return err
 			}
+
 			fl := cmd.Flags()
-			sel := rank.SelectOptions{Top: cfg.Selection.Top, MinScore: cfg.Selection.MinScore, MaxPerKind: cfg.Selection.MaxPerKind, ExcludeKinds: cfg.Selection.ExcludeKinds}
+			sel := rank.SelectOptions{
+				Top:          cfg.Selection.Top,
+				MinScore:     cfg.Selection.MinScore,
+				MaxPerKind:   cfg.Selection.MaxPerKind,
+				ExcludeKinds: cfg.Selection.ExcludeKinds,
+			}
 			if fl.Changed("top") {
 				sel.Top = top
 			}
+
 			if fl.Changed("min-score") {
 				sel.MinScore = minScore
 			}
+
 			if fl.Changed("max-per-kind") {
 				sel.MaxPerKind = maxPerKind
 			}
+
 			if fl.Changed("max-paragraph-bytes") {
 				cfg.Segmenter.MaxParagraphBytes = maxPara
 			}
+
 			res, err := pipeline.Run(cmd.Context(), pipeline.Options{
 				Config: cfg, InputPath: args[0], OutDir: outDir, NoModel: mf.noModel, NoCache: mf.noCache,
 				CacheDir: mf.cacheDir, SkipPreflight: mf.skipPreflight, Select: sel,
@@ -54,12 +64,14 @@ With --no-model, ranking uses deterministic features only and the outputs say so
 			if err != nil {
 				return err
 			}
+
 			c := res.Manifest.Counts
 			fmt.Fprintf(cmd.OutOrStdout(), "mode=%s segments=%d duplicates=%d selected=%d needs_review=%d model_calls=%d cache_hits=%d\n→ %s\n",
 				res.Manifest.Mode, c.Segments, c.Duplicates, c.Selected, c.NeedsReview, c.ModelCalls, c.CacheHits, filepath.Join(outDir, "top.json"))
 			if res.ModelErrors > 0 && !allowErrors {
 				return fmt.Errorf("%d segment(s) fell back to feature-only scoring after model errors (outputs were written; see model_error in scored.jsonl; use --allow-errors to accept this)", res.ModelErrors)
 			}
+
 			return nil
 		},
 	}

@@ -48,10 +48,12 @@ func (c *Cache) Get(key string) (map[string]tev1.Answer, tev1.Usage, bool) {
 	if err != nil {
 		return nil, tev1.Usage{}, false
 	}
+
 	var e entry
 	if json.Unmarshal(b, &e) != nil || e.Version != entryVersion || len(e.Answers) == 0 {
 		return nil, tev1.Usage{}, false
 	}
+
 	return e.Answers, e.Usage, true
 }
 
@@ -61,21 +63,26 @@ func (c *Cache) Put(key string, answers map[string]tev1.Answer, usage tev1.Usage
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
+
 	b, err := json.Marshal(entry{Version: entryVersion, Answers: answers, Usage: usage})
 	if err != nil {
 		return err
 	}
+
 	tmp, err := os.CreateTemp(filepath.Dir(p), ".tmp-*")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name())
+
 	if _, err := tmp.Write(b); err != nil {
 		tmp.Close()
 		return err
 	}
+
 	if err := tmp.Close(); err != nil {
 		return err
 	}
+
 	return os.Rename(tmp.Name(), p)
 }

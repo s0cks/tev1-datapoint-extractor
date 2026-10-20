@@ -26,17 +26,21 @@ func newSegments() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			opt := cfg.Segmenter
 			if cmd.Flags().Changed("max-paragraph-bytes") {
 				opt.MaxParagraphBytes = maxPara
 			}
+
 			if cmd.Flags().Changed("hard-max-bytes") {
 				opt.HardMaxBytes = hardMax
 			}
+
 			data, err := os.ReadFile(args[0])
 			if err != nil {
 				return err
 			}
+
 			segs, feats := pipeline.Analyze(string(data), opt)
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetEscapeHTML(false)
@@ -44,15 +48,18 @@ func newSegments() *cobra.Command {
 				segment.Segment
 				Features *features.Features `json:"features,omitempty"`
 			}
+
 			for i, s := range segs {
 				l := line{Segment: s}
 				if !noFeatures {
 					l.Features = &feats[i]
 				}
+
 				if err := enc.Encode(l); err != nil {
 					return err
 				}
 			}
+
 			fmt.Fprintf(cmd.ErrOrStderr(), "%d segments\n", len(segs))
 			return nil
 		},

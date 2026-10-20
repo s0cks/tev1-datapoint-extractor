@@ -20,6 +20,7 @@ func TestReadLabels(t *testing.T) {
 	if err != nil || len(ls) != 3 || ls[1].Kind != "" || !ls[0].IsDatapoint {
 		t.Fatalf("%+v %v", ls, err)
 	}
+
 	for name, bad := range map[string]string{
 		"not json":            "nope\n",
 		"empty text":          "{\"text\":\"  \",\"is_datapoint\":true}\n",
@@ -32,6 +33,7 @@ func TestReadLabels(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
+
 	if _, err := ReadLabels(strings.NewReader("{\"text\":\"x\",\"is_datapoint\":true}\nbad\n")); err == nil || !strings.Contains(err.Error(), "line 2") {
 		t.Errorf("error should name the line: %v", err)
 	}
@@ -43,10 +45,12 @@ func TestExampleLabelsLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	kinds := map[string]int{}
 	for _, l := range ls {
 		kinds[l.Kind]++
 	}
+
 	for _, k := range []string{"stats", "chart", "timeline", "quote", "findings", "threads", "callout", "profile", "sources", "other"} {
 		if kinds[k] == 0 {
 			t.Errorf("no example label of kind %q", k)
@@ -71,15 +75,18 @@ func TestCompute(t *testing.T) {
 	if r.Labels != 6 || r.Scored != 5 || r.Errors != 1 || r.Positives != 4 {
 		t.Errorf("counts: %+v", r)
 	}
+
 	approx(t, "accuracy", r.DatapointAccuracy, 3.0/5)
 	if *r.Confusion != (Confusion{TP: 2, FP: 1, TN: 1, FN: 1}) {
 		t.Errorf("confusion = %+v", r.Confusion)
 	}
+
 	approx(t, "kind accuracy", r.KindAccuracy, 2.0/4) // scored+kind-labeled: a ok, b wrong, c ok, e wrong
 	byKind := map[string]KindMetric{}
 	for _, k := range r.Kinds {
 		byKind[k.Kind] = k
 	}
+
 	// stats: support 2 (a, e), predicted 2 (a, b), tp 1
 	approx(t, "stats precision", byKind["stats"].Precision, 0.5)
 	approx(t, "stats recall", byKind["stats"].Recall, 0.5)
@@ -90,16 +97,19 @@ func TestCompute(t *testing.T) {
 	if byKind["timeline"].Precision != nil {
 		t.Error("precision with no predictions must be null")
 	}
+
 	approx(t, "timeline recall", byKind["timeline"].Recall, 0)
 	// findings was predicted for an item without a kind label → excluded entirely
 	if _, ok := byKind["findings"]; ok {
 		t.Error("items without a kind label must not affect kind metrics")
 	}
+
 	// confusion matrix: rows labeled, columns predicted
 	wantConf := map[string]map[string]int{"stats": {"stats": 1, "other": 1}, "timeline": {"stats": 1}, "other": {"other": 1}}
 	if !reflect.DeepEqual(r.KindConfusion, wantConf) {
 		t.Errorf("kind confusion = %v, want %v", r.KindConfusion, wantConf)
 	}
+
 	// ranking by Rank: a(1,T) b(2,T) d(3,F) e(4,T) c(5,F) f(6,T)
 	for k, want := range map[string]float64{"2": 1, "3": 2.0 / 3, "5": 3.0 / 5, "50": 4.0 / 6} {
 		if math.Abs(r.PrecisionAtK[k]-want) > 1e-9 {
@@ -113,12 +123,14 @@ func TestComputeEdgeCases(t *testing.T) {
 	if r.DatapointAccuracy != nil || r.KindAccuracy != nil || len(r.PrecisionAtK) != 0 {
 		t.Errorf("empty: %+v", r)
 	}
+
 	// Duplicates (Rank 0) are excluded from P@K; failures are excluded from accuracy.
 	labels := []Label{{Text: "x", IsDatapoint: true}, {Text: "x", IsDatapoint: true}}
 	r = Compute(labels, []Prediction{{OK: true, PDatapoint: 1, Kind: "stats", Rank: 1}, {OK: true, PDatapoint: 1, Kind: "stats"}}, []int{5})
 	if r.PrecisionAtK["5"] != 1 || r.Scored != 2 {
 		t.Errorf("%+v", r)
 	}
+
 	// The datapoint decision is the kind, not the soft probability.
 	r = Compute(labels[:1], []Prediction{{OK: true, PDatapoint: 0.9, Kind: "other", Rank: 1}}, nil)
 	approx(t, "other with high p is still a miss", r.DatapointAccuracy, 0)

@@ -30,16 +30,20 @@ Run it once per model (--model tev1:0.8b, --model tev1:4b) to compare them.`,
 			if err != nil {
 				return err
 			}
+
 			labels, err := evaluate.LoadLabels(args[0])
 			if err != nil {
 				return fmt.Errorf("reading labels: %w", err)
 			}
+
 			if len(labels) == 0 {
 				return fmt.Errorf("%s contains no labels", args[0])
 			}
+
 			if !cmd.Flags().Changed("k") {
 				ks = cfg.Eval.K
 			}
+
 			log := slog.Default()
 			client := pipeline.NewClient(cfg, log)
 			if !mf.noModel && !mf.skipPreflight {
@@ -47,20 +51,24 @@ Run it once per model (--model tev1:0.8b, --model tev1:4b) to compare them.`,
 					return fmt.Errorf("preflight: %w", err)
 				}
 			}
+
 			cc, err := pipeline.NewCache(mf.noCache || mf.noModel, mf.cacheDir)
 			if err != nil {
 				return err
 			}
+
 			cl := &pipeline.Classifier{Cfg: cfg, Client: client, Cache: cc, Log: log, NoModel: mf.noModel}
 			rep, err := evaluate.Run(cmd.Context(), cl, labels, ks)
 			if err != nil {
 				return err
 			}
+
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(rep)
 			}
+
 			_, err = fmt.Fprint(cmd.OutOrStdout(), rep.Format())
 			return err
 		},

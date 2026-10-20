@@ -79,15 +79,18 @@ func countEntities(text string) int {
 		} else if cap && i == 0 {
 			cap = false
 		}
+
 		if cap {
 			if !inRun {
 				count++
 			}
+
 			inRun = true
 		} else {
 			inRun = false
 		}
 	}
+
 	return count
 }
 
@@ -96,6 +99,7 @@ var stopwords = func() map[string]bool {
 	for _, w := range strings.Fields(`the and for that with this from are was were has have had but not you all can her his its our their they them been being will would could should about into over than then there these those which what when where who whom while also more most such only other some any each both very just may might must shall does did doing done out off our own same too under until upon your yours how why per via`) {
 		m[w] = true
 	}
+
 	return m
 }()
 
@@ -106,6 +110,7 @@ func terms(text string) []string {
 			out = append(out, w)
 		}
 	}
+
 	return out
 }
 
@@ -132,14 +137,17 @@ func ComputeAll(segs []segment.Segment, docLen int) []Features {
 			tf[t]++
 			set[t] = true
 		}
+
 		for t := range set {
 			df[t]++
 		}
+
 		segTerms[i] = set
 		if docLen > 0 {
 			out[i].Position = float64(s.Start) / float64(docLen)
 		}
 	}
+
 	weight := func(t string) float64 {
 		return float64(tf[t]) * math.Log(1+float64(n)/float64(df[t]))
 	}
@@ -150,23 +158,28 @@ func ComputeAll(segs []segment.Segment, docLen int) []Features {
 		for t := range segTerms[i] {
 			ws = append(ws, weight(t))
 		}
+
 		sort.Sort(sort.Reverse(sort.Float64Slice(ws)))
 		if len(ws) > topTerms {
 			ws = ws[:topTerms]
 		}
+
 		sum := 0.0
 		for _, w := range ws {
 			sum += w
 		}
+
 		raw[i] = sum / topTerms // fixed denominator: short fragments such as headings do not max out
 		if raw[i] > maxRaw {
 			maxRaw = raw[i]
 		}
 	}
+
 	if maxRaw > 0 {
 		for i := range out {
 			out[i].TermWeight = raw[i] / maxRaw
 		}
 	}
+
 	return out
 }
