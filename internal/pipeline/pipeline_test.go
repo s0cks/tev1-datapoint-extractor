@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,8 +14,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/s0cks/tev1-rank/internal/config"
+	"github.com/s0cks/tev1-rank/internal/input"
 	"github.com/s0cks/tev1-rank/internal/rank"
 	"github.com/s0cks/tev1-rank/internal/tev1"
 )
@@ -116,12 +119,59 @@ func (f *fakeOllama) check(t *testing.T) {
 	}
 }
 
-func writeInput(t *testing.T, dir, text string) string {
-	p := filepath.Join(dir, "in.txt")
-	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+// segmentsFromText stands in for the upstream text-preparation tool: every
+// blank-line separated paragraph becomes one segment. Ranges are byte offsets
+// into text; plain is the paragraph with whitespace collapsed; a token
+// containing a digit is tagged CD, and each capitalised word that does not
+// start the paragraph counts as an entity.
+func segmentsFromText(text string) []input.Segment {
+	segs := []input.Segment{}
+	pos := 0
+	for _, para := range strings.Split(text, "\n\n") {
+		start := pos + strings.Index(text[pos:], para)
+		pos = start + len(para)
+		if strings.TrimSpace(para) == "" {
+			continue
+		}
+		lead := len(para) - len(strings.TrimLeft(para, " \t\r\n"))
+		start, para = start+lead, strings.TrimSpace(para)
+		end := start + len(para)
+		plain := strings.Join(strings.Fields(para), " ")
+		seg := input.Segment{
+			Type: input.TypeSegment, ID: fmt.Sprintf("s%d", len(segs)), Block: len(segs), Kind: "paragraph",
+			Section: []string{}, Range: input.Range{Start: start, End: end}, Text: para, Plain: plain,
+		}
+		for i, w := range strings.Fields(plain) {
+			tag := "NN"
+			if strings.ContainsAny(w, "0123456789") {
+				tag = "CD"
+			} else if i > 0 && unicode.IsUpper([]rune(w)[0]) {
+				tag = "NNP"
+				seg.Entities = append(seg.Entities, input.Entity{Text: w, Label: "GPE"})
+			}
+			seg.Tokens = append(seg.Tokens, input.Token{T: w, POS: tag})
+		}
+		segs = append(segs, seg)
+	}
+	return segs
+}
+
+// writeSegments writes a segments file in the upstream format.
+func writeSegments(t *testing.T, dir string, segs []input.Segment) string {
+	t.Helper()
+	b, err := json.Marshal(map[string]any{"source": "in.txt", "format": "txt", "segments": segs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "segments.json")
+	if err := os.WriteFile(p, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func writeInput(t *testing.T, dir, text string) string {
+	return writeSegments(t, dir, segmentsFromText(text))
 }
 
 func opts(t *testing.T, f *fakeOllama, dir, input string) Options {
@@ -187,12 +237,13 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 		t.Errorf("manifest = %+v", res.Manifest)
 	}
 
-	// Offsets round-trip against the original file; stats outrank prose.
+	// Segment ranges are offsets into the source document (here, sampleDoc),
+	// and the reported text is the segment's plain text; stats outrank prose.
 	recs := readRecords(t, dir)
 	for _, r := range recs {
 		s, e := int(r["start"].(float64)), int(r["end"].(float64))
 		if sampleDoc[s:e] != r["text"].(string) {
-			t.Errorf("offset invariant broken for %v", r["id"])
+			t.Errorf("source offsets do not match text for %v", r["id"])
 		}
 		if !strings.HasPrefix(r["hash"].(string), "sha256:") || r["scored_by"] != "model" {
 			t.Errorf("bad record: %v", r)
@@ -473,7 +524,7 @@ func TestRunEmptyAndMissingInput(t *testing.T) {
 	if !strings.Contains(string(b), `"items": []`) {
 		t.Errorf("empty items must serialise as []: %s", b)
 	}
-	o.InputPath = filepath.Join(dir, "nope.txt")
+	o.InputPath = filepath.Join(dir, "nope.json")
 	if _, err := Run(context.Background(), o); err == nil {
 		t.Error("missing input accepted")
 	}
@@ -485,7 +536,6 @@ func TestStateTruncationAndConcurrency(t *testing.T) {
 	o := opts(t, f, dir, writeInput(t, dir, "Short 12.\n\n"+strings.Repeat("日本語 ", 300)+"\n\nAnother 34 fact.\n"))
 	o.Config.State.MaxTextBytes = 100
 	o.Config.Concurrency = 3
-	o.Config.Segmenter.MaxParagraphBytes, o.Config.Segmenter.HardMaxBytes = 0, 0
 	if _, err := Run(context.Background(), o); err != nil {
 		t.Fatal(err)
 	}
@@ -495,8 +545,9 @@ func TestStateTruncationAndConcurrency(t *testing.T) {
 	}
 }
 
-// The model sees normalised text; the record keeps the original bytes.
-func TestStateIsNormalisedButRecordIsVerbatim(t *testing.T) {
+// The model sees the segment's plain text (not the markup-bearing source text),
+// and the record reports the same plain text.
+func TestModelSeesPlainText(t *testing.T) {
 	var got struct{ Seg, Feat string }
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -525,27 +576,133 @@ func TestStateIsNormalisedButRecordIsVerbatim(t *testing.T) {
 	}))
 	defer srv.Close()
 	dir := t.TempDir()
-	raw := "In 1960, the Agency\u202f(\u200dCIA\u200d) Station Chief\nreceived a cable in the Congo ."
-	o := opts(t, nil, dir, writeInput(t, dir, raw+"\n"))
+	seg := input.Segment{
+		Type: input.TypeSegment, ID: "s0", Kind: "paragraph", Section: []string{"1960"},
+		Range: input.Range{Start: 10, End: 90},
+		Text:  "In **1960**, the Agency (**CIA**) Station Chief\nreceived a cable in the Congo.",
+		Plain: "In 1960, the Agency (CIA) Station Chief received a cable in the Congo.",
+		Tokens: []input.Token{
+			{T: "In", POS: "IN"}, {T: "1960", POS: "CD"}, {T: ",", POS: ","}, {T: "Agency", POS: "NNP"},
+			{T: "CIA", POS: "NNP"}, {T: "Congo", POS: "NNP"}, {T: ".", POS: "."},
+		},
+		Entities: []input.Entity{{Text: "CIA", Label: "ORGANIZATION"}, {Text: "Congo", Label: "GPE"}},
+	}
+	o := opts(t, nil, dir, writeSegments(t, dir, []input.Segment{seg}))
 	o.Config.OllamaURL = srv.URL
 	o.Client = &tev1.Client{BaseURL: srv.URL, Timeout: 5 * time.Second}
 	o.SkipPreflight = true
 	if _, err := Run(context.Background(), o); err != nil {
 		t.Fatal(err)
 	}
-	if want := "In 1960, the Agency (CIA) Station Chief received a cable in the Congo."; got.Seg != want {
-		t.Errorf("model saw %q, want %q", got.Seg, want)
+	if got.Seg != seg.Plain {
+		t.Errorf("model saw %q, want the plain text %q", got.Seg, seg.Plain)
+	}
+	// Words counts tokens with a letter or digit: punctuation is excluded.
+	if want := "numerics=1; named_entities=2; words=5"; got.Feat != want {
+		t.Errorf("model saw features %q, want %q", got.Feat, want)
 	}
 	recs := readRecords(t, dir)
-	if recs[0]["text"] != raw {
-		t.Errorf("record text altered: %q", recs[0]["text"])
+	if recs[0]["text"] != seg.Plain || recs[0]["block_kind"] != "paragraph" {
+		t.Errorf("record = %v", recs[0])
 	}
-	// turning normalisation off sends the raw text and changes the cache key
-	o2 := opts(t, nil, t.TempDir(), writeInput(t, dir, raw+"\n"))
-	o2.Config.OllamaURL = srv.URL
-	o2.Config.State.NormalizeText = false
-	if o2.Config.QuestionSetHash() == o.Config.QuestionSetHash() {
-		t.Error("normalize_text must be part of the question set hash")
+	if recs[0]["start"] != 10.0 || recs[0]["end"] != 90.0 {
+		t.Errorf("record keeps the source range: %v", recs[0])
+	}
+	if sec := toStrings(recs[0]["section"]); len(sec) != 1 || sec[0] != "1960" {
+		t.Errorf("section = %v", recs[0]["section"])
+	}
+}
+
+// With state.include_features the counts reach the model, so the same text with
+// different upstream annotations must not be served from the cache; without
+// them the text alone decides.
+func TestCacheKeyCoversFeatureCounts(t *testing.T) {
+	for _, includeFeatures := range []bool{true, false} {
+		f := newFake(t)
+		dir := t.TempDir()
+		segs := segmentsFromText("Revenue grew 14% in 2024.\n")
+		o := opts(t, f, dir, writeSegments(t, dir, segs))
+		o.Config.State.IncludeFeatures = includeFeatures
+		if _, err := Run(context.Background(), o); err != nil {
+			t.Fatal(err)
+		}
+		first := atomic.LoadInt32(&f.calls)
+
+		// Same text, an extra entity from the upstream tool.
+		segs[0].Entities = append(segs[0].Entities, input.Entity{Text: "Revenue", Label: "ORGANIZATION"})
+		o.InputPath = writeSegments(t, dir, segs)
+		if _, err := Run(context.Background(), o); err != nil {
+			t.Fatal(err)
+		}
+		again := atomic.LoadInt32(&f.calls) - first
+		if includeFeatures && again == 0 {
+			t.Error("include_features: changed counts must miss the cache")
+		}
+		if !includeFeatures && again != 0 {
+			t.Errorf("without features the text alone is the key; got %d new calls", again)
+		}
+	}
+}
+
+// The checked-in sample is shaped like the upstream tool's output and its
+// ranges point into testdata/sample.md. Offline: no model.
+func TestRunOnSampleFixture(t *testing.T) {
+	dir := t.TempDir()
+	o := opts(t, nil, dir, filepath.Join("..", "..", "testdata", "segments.sample.json"))
+	o.NoModel = true
+	o.Select = rank.SelectOptions{Top: 3}
+	res, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := res.Manifest
+	if m.Counts.Segments != 10 || m.Input.Source != "sample.md" || m.Input.Format != "md" {
+		t.Fatalf("manifest = %+v", m)
+	}
+	var top TopFile
+	b, _ := os.ReadFile(filepath.Join(dir, "out", "top.json"))
+	if err := json.Unmarshal(b, &top); err != nil {
+		t.Fatal(err)
+	}
+	if top.Source.File != "sample.md" || top.Source.Format != "md" || !strings.HasPrefix(top.Source.SegmentsHash, "sha256:") {
+		t.Errorf("source = %+v", top.Source)
+	}
+	// Segments with numbers and entities beat headings and scene-setting prose.
+	ids := map[string]bool{}
+	for _, it := range top.Items {
+		ids[it.ID] = true
+		if it.BlockKind != "paragraph" || len(it.Section) == 0 {
+			t.Errorf("item %s lost its structure: %+v", it.ID, it)
+		}
+	}
+	if !ids["s2"] || !ids["s9"] || !ids["s6"] {
+		t.Errorf("top = %v, want s2, s6 and s9", ids)
+	}
+	if !strings.Contains(top.Items[0].Text, "European Union") && !strings.Contains(top.Items[0].Text, "Kellvik") {
+		t.Errorf("top item = %q", top.Items[0].Text)
+	}
+}
+
+// Malformed input is rejected with a useful error and writes nothing.
+func TestRunRejectsBadInput(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "bad.json")
+	for name, content := range map[string]string{
+		"not json":      "Revenue grew 14% in 2024.\n",
+		"no segments":   `{"source": "x.md"}`,
+		"duplicate ids": `{"segments":[{"type":"segment","id":"a","plain":"x 1"},{"type":"segment","id":"a","plain":"y 2"}]}`,
+	} {
+		if err := os.WriteFile(bad, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		o := opts(t, nil, dir, bad)
+		o.NoModel = true
+		if _, err := Run(context.Background(), o); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "out")); err == nil {
+		t.Error("no outputs should be written for bad input")
 	}
 }
 

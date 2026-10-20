@@ -7,18 +7,20 @@
   "additionalProperties": false,
   "required": ["schema_version", "mode", "source", "model", "question_set_hash", "selection", "count", "items"],
   "properties": {
-    "schema_version": { "const": "tev1-rank/top/v2" },
+    "schema_version": { "const": "tev1-rank/top/v3" },
     "mode": {
       "enum": ["model", "no-model"],
-      "description": "\"no-model\" means ranking used deterministic features only; kind and model are null."
+      "description": "\"no-model\" means ranking used only the counts derived from the upstream annotations; kind and model are null."
     },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["file", "hash"],
+      "required": ["file", "format", "segments_hash"],
+      "description": "The document the upstream text-preparation tool segmented, and the segments file this run read.",
       "properties": {
-        "file": { "type": "string", "description": "Base name of the input file." },
-        "hash": { "$ref": "#/$defs/hash", "description": "sha256 of the whole input file." }
+        "file": { "type": "string", "description": "Name of the source document, as reported by the upstream tool (e.g. main.md)." },
+        "format": { "type": "string", "description": "Format of the source document, as reported by the upstream tool (e.g. md)." },
+        "segments_hash": { "$ref": "#/$defs/hash", "description": "sha256 of the whole segments file that was read." }
       }
     },
     "model": { "type": ["string", "null"], "description": "Ollama model tag, or null in no-model mode." },
@@ -45,14 +47,17 @@
     "item": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rank", "id", "hash", "start", "end", "text", "kind", "final_score", "needs_review", "review_reasons", "features", "model"],
+      "required": ["rank", "id", "hash", "block", "block_kind", "section", "start", "end", "text", "kind", "final_score", "needs_review", "review_reasons", "features", "model"],
       "properties": {
         "rank": { "type": "integer", "minimum": 1 },
         "id": { "type": "string" },
         "hash": { "$ref": "#/$defs/hash", "description": "sha256 of text." },
-        "start": { "type": "integer", "minimum": 0, "description": "Byte offset into the input file." },
-        "end": { "type": "integer", "minimum": 0, "description": "Exclusive byte offset; input[start:end] == text." },
-        "text": { "type": "string" },
+        "block": { "type": "integer", "minimum": 0, "description": "Ordinal of the source block, as numbered by the upstream tool." },
+        "block_kind": { "type": "string", "description": "Structural kind from the upstream tool: heading, paragraph, blockquote, list_item, ... Not the tev1 kind." },
+        "section": { "type": "array", "items": { "type": "string" }, "description": "Heading path of the segment, outermost first." },
+        "start": { "type": "integer", "minimum": 0, "description": "Byte offset into the SOURCE document (source.file), not into the segments file." },
+        "end": { "type": "integer", "minimum": 0, "description": "Exclusive byte offset into the source document." },
+        "text": { "type": "string", "description": "The segment's plain text (markup stripped): what the model saw." },
         "kind": { "type": ["string", "null"], "description": "Most likely kind; null in no-model mode." },
         "final_score": { "type": "number", "minimum": 0, "maximum": 1 },
         "needs_review": { "type": "boolean" },
@@ -63,18 +68,13 @@
         "features": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["numbers", "percentages", "currency", "years", "dates", "entities", "length", "words", "position", "term_weight"],
+          "description": "Counts derived from the upstream annotations.",
+          "required": ["numerics", "entities", "words", "position"],
           "properties": {
-            "numbers": { "type": "integer", "minimum": 0 },
-            "percentages": { "type": "integer", "minimum": 0 },
-            "currency": { "type": "integer", "minimum": 0 },
-            "years": { "type": "integer", "minimum": 0 },
-            "dates": { "type": "integer", "minimum": 0 },
-            "entities": { "type": "integer", "minimum": 0 },
-            "length": { "type": "integer", "minimum": 0, "description": "Characters (runes)." },
-            "words": { "type": "integer", "minimum": 0 },
-            "position": { "type": "number", "minimum": 0, "maximum": 1 },
-            "term_weight": { "type": "number", "minimum": 0, "maximum": 1 }
+            "numerics": { "type": "integer", "minimum": 0, "description": "Tokens the upstream tagger marked CD." },
+            "entities": { "type": "integer", "minimum": 0, "description": "Named-entity spans found by the upstream tool." },
+            "words": { "type": "integer", "minimum": 0, "description": "Tokens containing a letter or digit." },
+            "position": { "type": "number", "minimum": 0, "maximum": 1, "description": "Segment start as a fraction of the source document's extent." }
           }
         },
         "model": {

@@ -1,17 +1,23 @@
 # Output format
 
-`tev1-rank rank <input.txt> --out-dir out/` writes three files. All JSON is UTF-8, hashes are
-always `sha256:<hex>`, and offsets are **byte** offsets into the original input file
-(`input[start:end] == text`; this is a tested invariant).
+`tev1-rank rank <segments.json> --out-dir out/` writes three files. All JSON is UTF-8 and hashes are
+always `sha256:<hex>`. `start`/`end` are **byte** offsets into the *source document* the upstream
+tool segmented (e.g. `main.md`), which this tool never sees, so they cannot be checked against the
+input. `text` is the segment's **plain text** (markup stripped), which is what the model saw, so
+`source[start:end]` equals the upstream `text`, not this `text`, whenever the segment has markup.
 
 `scored.jsonl` and `top.json` contain no timestamps: with the same input, config, model and cache
 they are byte-identical across runs (modulo the `cached` flag in `scored.jsonl`). `run.json` carries
 the timings.
 
-Schema versions: `top.json` is `tev1-rank/top/v2`, `run.json` is `tev1-rank/run/v1`. Breaking
-changes bump the version; stage 2 should check it. v2 dropped `model.p_unknown` and the
-`high_unknown_probability` review reason (there is no `is_datapoint` question any more) and changed
-the `kind` values to the card-schema block types.
+Schema versions: `top.json` is `tev1-rank/top/v3`, `run.json` is `tev1-rank/run/v2`. Breaking
+changes bump the version; stage 2 should check it. v3 (this tool stopped segmenting and analysing
+text itself): `source` is now `{file, format, segments_hash}`; `start`/`end` refer to the upstream
+source document; `text` is plain text; items gained `block`, `block_kind` and `section`; and
+`features` is now `{numerics, entities, words, position}` (it was `numbers`, `percentages`,
+`currency`, `years`, `dates`, `entities`, `length`, `words`, `position`, `term_weight`). The v2
+changes still apply: no `model.p_unknown`, no `high_unknown_probability` review reason, and `kind`
+values are the card-schema block types.
 
 ## `top.json`: what stage 2 consumes
 
@@ -20,9 +26,10 @@ Machine-checkable schema: [`schema/top.schema.json`](../schema/top.schema.json) 
 
 ```jsonc
 {
-  "schema_version": "tev1-rank/top/v2",
+  "schema_version": "tev1-rank/top/v3",
   "mode": "model",                       // or "no-model"
-  "source": { "file": "sample.txt", "hash": "sha256:…" },   // base name + hash of the whole input
+  "source": { "file": "main.md", "format": "md",          // the document the upstream tool segmented
+              "segments_hash": "sha256:…" },              // hash of the segments file that was read
   "model": "tev1:0.8b",                  // null in no-model mode
   "question_set_hash": "sha256:…",       // null in no-model mode
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
@@ -30,16 +37,17 @@ Machine-checkable schema: [`schema/top.schema.json`](../schema/top.schema.json) 
   "items": [                             // best first
     {
       "rank": 1,
-      "id": "seg-0012-ab12cd34",
+      "id": "s12",                       // the upstream tool's segment id
       "hash": "sha256:…",                // hash of `text`
-      "start": 1034, "end": 1151,        // byte offsets into the input
-      "text": "Revenue grew 14% …",
+      "block": 9, "block_kind": "paragraph",           // upstream structure (not the tev1 kind)
+      "section": ["2024", "Results"],                  // heading path
+      "start": 1034, "end": 1151,        // byte offsets into the SOURCE document
+      "text": "Revenue grew 14% …",      // plain text, as the model saw it
       "kind": "stats",                   // never "other" by default; null in no-model mode
       "final_score": 0.8312,             // 0..1
       "needs_review": false,
       "review_reasons": [],              // see below
-      "features": { "numbers": 3, "percentages": 1, "currency": 1, "years": 1, "dates": 0,
-                    "entities": 0, "length": 117, "words": 19, "position": 0.31, "term_weight": 0.42 },
+      "features": { "numerics": 3, "entities": 1, "words": 19, "position": 0.31 },
       "model": {                         // null in no-model mode
         "p_datapoint": 0.93,             // 1 - P(kind = other)
         "importance": 4.2,               // expected importance on 1..5
@@ -70,7 +78,7 @@ punctuation/spacing) are collapsed, keeping the first occurrence.
 
 | field | meaning |
 |---|---|
-| `id`, `start`, `end`, `hash`, `text` | segment identity. `id` = `seg-<ordinal>-<first 8 hex of hash>`. |
+| `id`, `block`, `block_kind`, `section`, `start`, `end`, `hash`, `text` | segment identity and structure, from the upstream tool. `id` is the upstream id; `start`/`end` are source-document offsets; `text` is the plain text and `hash` is its sha256. |
 | `features` | as in `top.json` |
 | `scored_by` | `model`, `features` (`--no-model`), or `features_fallback` (the model call for this segment failed) |
 | `answers` | **raw model answers**: `{ "kind": {...}, "importance": {...} }`, each with `choice` / `score`, `probabilities`, `legend`, `confidence`. `importance` is absent for `other` segments (never asked). Omitted unless `scored_by` is `model`. |
@@ -96,10 +104,12 @@ final_score = ( w.datapoint  * (1 - P(kind = other))
               + w.kind       * Σ_k P(kind=k) * kind_weights[k]
               + w.features   * feature_bonus ) / (sum of the four weights)
 
-feature_bonus = Σ fw[f] * min(1, count_f / feature_saturation) / Σ fw      (term_weight is used as-is)
+feature_bonus = Σ fw[f] * min(1, count_f / feature_saturation) / Σ fw      (f ∈ numerics, entities)
 ```
 
-Every weight, `kind_weights`, `feature_weights`, `feature_saturation` and the review thresholds
+`numerics` and `entities` are counts read off the upstream annotations (see
+[input-format.md](input-format.md)); `words` and `position` are reported but carry no weight. Every
+weight, `kind_weights`, `feature_weights`, `feature_saturation` and the review thresholds
 live in the config (`tev1-rank config` prints the defaults). In `--no-model` mode
 `final_score = feature_bonus`. A segment whose model call failed is scored with the model terms
 set to zero, so it sinks rather than floats to the top.
@@ -108,20 +118,21 @@ set to zero, so it sinks rather than floats to the top.
 
 ```jsonc
 {
-  "schema_version": "tev1-rank/run/v1",
+  "schema_version": "tev1-rank/run/v2",
   "tool": { "name": "tev1-rank", "version": "dev" },
   "started_at": "…Z", "finished_at": "…Z",
   "mode": "model",                                // or "no-model"
-  "input": { "path": "sample.txt", "hash": "sha256:…", "bytes": 4210 },
+  "input": { "path": "segments.json", "hash": "sha256:…", "bytes": 4210,   // the segments file read
+             "source": "main.md", "format": "md" },                          // as reported by the upstream tool
   "model": { "name": "tev1:0.8b", "ollama_version": "0.35.0",
              "question_set_hash": "sha256:…",
-             "state_format": "state/v3;two-stage;features=true;max_text_bytes=4000;normalize=true" },   // null in no-model mode
+             "state_format": "state/v4;two-stage;features=true;max_text_bytes=4000" },   // null in no-model mode
   "config": { … },                                // the effective config, including the questions
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
-  "counts": { "segments": 26, "duplicates": 1, "ranked": 25, "selected": 20, "needs_review": 3,
+  "counts": { "segments": 26, "skipped_entries": 0, "duplicates": 1, "ranked": 25, "selected": 20, "needs_review": 3,
               "model_calls": 39, "importance_skipped": 13,   // requests sent; segments classified "other" got no importance request "cache_hits": 1, "cache_misses": 25, "model_errors": 0,
               "context_exceeded": 0, "input_tokens": 45075, "output_tokens": 100 },       // summed over model calls, as reported by the server
-  "timings_ms": { "segment": 1, "preflight": 12, "classify": 8123, "total": 8140, "model_calls_sum": 8090 },
+  "timings_ms": { "load": 1, "preflight": 12, "classify": 8123, "total": 8140, "model_calls_sum": 8090 },
   "outputs": { "scored": "scored.jsonl", "top": "top.json" }
 }
 ```
@@ -140,15 +151,18 @@ concurrency, retries and the like deliberately do **not** change it.
 
 ## Text sent to the model vs. text reported
 
-`text`, `start` and `end` are always the original bytes. By default (`state.normalize_text`) the
-model is sent a cleaned copy: whitespace and hard line wraps collapsed to single spaces,
-zero-width characters and soft hyphens removed, and a space before `. , ; :` dropped. If stage 2
-wants the cleaned text too, say so and it can be added as an additive field.
+The model is sent the upstream `plain` text, cut at `state.max_text_bytes` (flagged
+`state_truncated`), and, with `state.include_features`, a one-line summary of the counts
+(`numerics=3; named_entities=1; words=19`). The record's `text` is that same plain text. The
+upstream `text` (with markup) and `tts` fields are not carried into the outputs; if stage 2 wants
+either, say so and it can be added as an additive field.
 
 ## Config warnings
 
 At startup (model mode) the tool warns when `kind` options have no `ranking.kind_weights` entry
 (they fall back to `default_kind_weight`, so the kind term cannot separate them), when
 `kind_weights` has entries that match no option, and when the config has questions other than
-`kind` and `importance` (they are never sent). `kind_weights` are **merged** with the embedded
-defaults, so stale default keys linger; they are ignored but reported.
+`kind` and `importance` (they are never sent), and when `ranking.feature_weights` names something
+other than `numerics` and `entities` (for example `years` or `term_weight` from older configs).
+`kind_weights` and `feature_weights` are **merged** with the embedded defaults, so stale keys
+linger; they are ignored but reported.

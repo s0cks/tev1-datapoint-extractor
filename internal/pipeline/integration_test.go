@@ -20,9 +20,8 @@ import (
 	"time"
 
 	"github.com/s0cks/tev1-rank/internal/config"
-	"github.com/s0cks/tev1-rank/internal/features"
+	"github.com/s0cks/tev1-rank/internal/input"
 	"github.com/s0cks/tev1-rank/internal/rank"
-	"github.com/s0cks/tev1-rank/internal/segment"
 )
 
 func liveConfig(t *testing.T) config.Config {
@@ -56,12 +55,12 @@ func TestLivePreflightAndClassify(t *testing.T) {
 		"Revenue grew 14% to $2.3 billion in 2024.",
 		"The harbor smells of salt and diesel at dawn.",
 	}
-	segs := make([]segment.Segment, len(texts))
+	segs := make([]input.Segment, len(texts))
 	for i, tx := range texts {
-		segs[i] = segment.Segment{ID: fmt.Sprintf("live-%d", i), Text: tx, Hash: segment.HashText(tx), End: len(tx)}
+		segs[i] = input.Segment{ID: fmt.Sprintf("live-%d", i), Kind: "paragraph", Text: tx, Plain: tx, Hash: input.HashText(tx), Range: input.Range{End: len(tx)}}
 	}
 	cl := &Classifier{Cfg: cfg, Client: c}
-	recs, err := cl.BuildRecords(ctx, segs, features.ComputeAll(segs, len(texts[0])+len(texts[1])))
+	recs, err := cl.BuildRecords(ctx, segs, make([]input.Features, len(segs)))
 	if err != nil {
 		t.Fatalf("BuildRecords: %v", err)
 	}
@@ -87,14 +86,14 @@ func TestLiveRunSample(t *testing.T) {
 	}
 	dir := t.TempDir()
 	res, err := Run(context.Background(), Options{
-		Config: cfg, InputPath: filepath.Join("..", "..", "testdata", "sample.txt"),
+		Config: cfg, InputPath: filepath.Join("..", "..", "testdata", "segments.sample.json"),
 		OutDir: filepath.Join(dir, "out"), CacheDir: filepath.Join(dir, "cache"),
 		Select: rank.SelectOptions{Top: 5},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ModelErrors != 0 || res.Manifest.Counts.Selected != 5 {
+	if res.ModelErrors != 0 || res.Manifest.Counts.Selected == 0 || res.Manifest.Counts.Selected > 5 {
 		t.Errorf("counts: %+v", res.Manifest.Counts)
 	}
 	for _, i := range res.Selected {

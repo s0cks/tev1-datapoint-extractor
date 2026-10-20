@@ -1,4 +1,4 @@
-// Package cli defines the cobra command tree.
+// Package cmd defines the cobra command tree.
 package cmd
 
 import (
@@ -19,7 +19,7 @@ func NewRoot() *cobra.Command {
 	var verbose bool
 	root := &cobra.Command{
 		Use:           "tev1-rank",
-		Short:         "Stage 1 of the infographic pipeline: segment text, classify with tev1, rank",
+		Short:         "Stage 1 of the infographic pipeline: classify pre-segmented text with tev1, rank",
 		Version:       pipeline.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -32,7 +32,7 @@ func NewRoot() *cobra.Command {
 		}
 		slog.SetDefault(slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), &slog.HandlerOptions{Level: level})))
 	}
-	root.AddCommand(newRank(), newSegments(), newEval(), newConfigCmd())
+	root.AddCommand(newRank(), newValidate(), newEval(), newConfigCmd())
 	return root
 }
 
@@ -59,7 +59,7 @@ func (m *modelFlags) add(fs *pflag.FlagSet) {
 	fs.IntVar(&m.retries, "retries", 0, "retries per request after the first attempt")
 	fs.BoolVar(&m.noCache, "no-cache", false, "bypass the on-disk answer cache")
 	fs.StringVar(&m.cacheDir, "cache-dir", "", "cache directory (default: <user cache dir>/tev1-rank)")
-	fs.BoolVar(&m.noModel, "no-model", false, "rank from deterministic features only; Ollama is not contacted")
+	fs.BoolVar(&m.noModel, "no-model", false, "rank from the upstream annotation counts only; Ollama is not contacted")
 	fs.BoolVar(&m.skipPreflight, "skip-preflight", false, "skip the Ollama version/model check")
 }
 

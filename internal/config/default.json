@@ -7,16 +7,10 @@
   "backoff_ms": 500,
   "concurrency": 1,
 
-  "segmenter": {
-    "max_paragraph_bytes": 600,
-    "hard_max_bytes": 1400
-  },
-
   "state": {
     "include_features": true,
     "max_text_bytes": 4000,
-    "context_tokens": 2048,
-    "normalize_text": true
+    "context_tokens": 2048
   },
 
   "questions": [
@@ -72,13 +66,8 @@
     },
     "default_kind_weight": 0.3,
     "feature_weights": {
-      "numbers": 0.1,
-      "percentages": 0.1,
-      "currency": 0.1,
-      "years": 0.3,
-      "dates": 0.2,
-      "entities": 0.2,
-      "term_weight": 0.0
+      "numerics": 0.6,
+      "entities": 0.4
     },
     "feature_saturation": 2,
     "review": {

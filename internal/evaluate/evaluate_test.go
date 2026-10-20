@@ -1,10 +1,14 @@
 package evaluate
 
 import (
+	"context"
 	"math"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/s0cks/tev1-rank/internal/config"
+	"github.com/s0cks/tev1-rank/internal/pipeline"
 )
 
 func approx(t *testing.T, name string, got *float64, want float64) {
@@ -149,5 +153,19 @@ func TestFormatSmoke(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// Labels are bare text with no upstream annotations, so there is no features-only
+// baseline to evaluate: --no-model must be refused, not silently report noise.
+func TestRunRefusesNoModel(t *testing.T) {
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl := &pipeline.Classifier{Cfg: cfg, NoModel: true}
+	_, err = Run(context.Background(), cl, []Label{{Text: "Revenue grew 14%.", IsDatapoint: true}}, []int{5})
+	if err == nil || !strings.Contains(err.Error(), "needs the model") {
+		t.Errorf("err = %v", err)
 	}
 }

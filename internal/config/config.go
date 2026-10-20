@@ -11,7 +11,6 @@ import (
 	"os"
 	"sort"
 
-	"github.com/s0cks/tev1-rank/internal/segment"
 	"github.com/s0cks/tev1-rank/internal/tev1"
 )
 
@@ -29,6 +28,10 @@ const (
 	QImportance = "importance"
 )
 
+// FeatureNames are the ranking.feature_weights keys that mean something: the
+// counts derived from the upstream annotations (see input.Features).
+var FeatureNames = []string{"numerics", "entities"}
+
 // KindOther is the kind option meaning "not a datapoint". A segment the model
 // classifies as KindOther is not sent on to the importance request.
 const KindOther = "other"
@@ -42,7 +45,6 @@ type Config struct {
 	BackoffMillis  int    `json:"backoff_ms"`
 	Concurrency    int    `json:"concurrency"`
 
-	Segmenter segment.Options      `json:"segmenter"`
 	State     StateConfig          `json:"state"`
 	Questions []tev1.NamedQuestion `json:"questions"`
 	Ranking   RankingConfig        `json:"ranking"`
@@ -53,10 +55,6 @@ type Config struct {
 type StateConfig struct {
 	IncludeFeatures bool `json:"include_features"`
 	MaxTextBytes    int  `json:"max_text_bytes"`
-	// NormalizeText collapses whitespace/line wraps and strips zero-width
-	// characters in the text sent to the model. The reported segment text and
-	// offsets are never changed.
-	NormalizeText bool `json:"normalize_text"`
 	// ContextTokens is the model's context window, used only to warn when a
 	// request's reported input_tokens gets close to it. It does not affect
 	// what is sent or the question_set_hash.
@@ -197,7 +195,7 @@ func has(ss []string, s string) bool {
 // StateFormat identifies the shape of the state sent to the model. It is part
 // of the question-set hash so that changing it invalidates cached answers.
 func (c Config) StateFormat() string {
-	return fmt.Sprintf("state/v3;two-stage;features=%t;max_text_bytes=%d;normalize=%t", c.State.IncludeFeatures, c.State.MaxTextBytes, c.State.NormalizeText)
+	return fmt.Sprintf("state/v4;two-stage;features=%t;max_text_bytes=%d", c.State.IncludeFeatures, c.State.MaxTextBytes)
 }
 
 // QuestionSetHash is "sha256:<hex>" over the model name, the ordered questions
@@ -219,6 +217,16 @@ func (c Config) Warnings() []string {
 		if q.Name != QKind && q.Name != QImportance {
 			w = append(w, fmt.Sprintf("question %q is not used: only %q and %q are sent (in separate requests)", q.Name, QKind, QImportance))
 		}
+	}
+	var badFeatures []string
+	for name := range c.Ranking.FeatureWeights {
+		if !has(FeatureNames, name) {
+			badFeatures = append(badFeatures, name)
+		}
+	}
+	sort.Strings(badFeatures)
+	if len(badFeatures) > 0 {
+		w = append(w, fmt.Sprintf("ranking.feature_weights entries %v are ignored: the features come from the upstream annotations and only %v exist", badFeatures, FeatureNames))
 	}
 	kq, _ := c.Question(QKind)
 	opts := kq.Options()

@@ -1,0 +1,1404 @@
+{
+  "source": "sample.md",
+  "format": "md",
+  "segments": [
+    {
+      "type": "segment",
+      "id": "s0",
+      "block": 0,
+      "kind": "heading",
+      "level": 3,
+      "section": [
+        "1987"
+      ],
+      "range": {
+        "start": 4,
+        "end": 8
+      },
+      "text": "1987",
+      "plain": "1987",
+      "tts": "1987.",
+      "tokens": [
+        {
+          "t": "1987",
+          "pos": "CD",
+          "stem": "1987",
+          "range": {
+            "start": 0,
+            "end": 4
+          }
+        }
+      ],
+      "token_count": 1
+    },
+    {
+      "type": "segment",
+      "id": "s1",
+      "block": 1,
+      "kind": "heading",
+      "level": 4,
+      "section": [
+        "1987",
+        "Founding"
+      ],
+      "range": {
+        "start": 15,
+        "end": 23
+      },
+      "text": "Founding",
+      "plain": "Founding",
+      "tts": "Founding.",
+      "tokens": [
+        {
+          "t": "Founding",
+          "pos": "NN",
+          "stem": "founding",
+          "range": {
+            "start": 0,
+            "end": 8
+          }
+        }
+      ],
+      "token_count": 1
+    },
+    {
+      "type": "segment",
+      "id": "s2",
+      "block": 2,
+      "kind": "paragraph",
+      "section": [
+        "1987",
+        "Founding"
+      ],
+      "range": {
+        "start": 25,
+        "end": 163
+      },
+      "text": "The cooperative began in **1987** with twelve fishing families sharing a single\ncold-storage shed on the east dock of the Port of Kellvik.",
+      "plain": "The cooperative began in 1987 with twelve fishing families sharing a single cold-storage shed on the east dock of the Port of Kellvik.",
+      "tts": "The cooperative began in 1987 with twelve fishing families sharing a single cold-storage shed on the east dock of the Port of Kellvik.",
+      "tokens": [
+        {
+          "t": "The",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 0,
+            "end": 3
+          }
+        },
+        {
+          "t": "cooperative",
+          "pos": "NN",
+          "stem": "cooperative",
+          "range": {
+            "start": 4,
+            "end": 15
+          }
+        },
+        {
+          "t": "began",
+          "pos": "VBD",
+          "stem": "began",
+          "range": {
+            "start": 16,
+            "end": 21
+          }
+        },
+        {
+          "t": "in",
+          "pos": "IN",
+          "stem": "in",
+          "range": {
+            "start": 22,
+            "end": 24
+          }
+        },
+        {
+          "t": "1987",
+          "pos": "CD",
+          "stem": "1987",
+          "range": {
+            "start": 25,
+            "end": 29
+          }
+        },
+        {
+          "t": "with",
+          "pos": "IN",
+          "stem": "with",
+          "range": {
+            "start": 30,
+            "end": 34
+          }
+        },
+        {
+          "t": "twelve",
+          "pos": "CD",
+          "stem": "twelve",
+          "range": {
+            "start": 35,
+            "end": 41
+          }
+        },
+        {
+          "t": "fishing",
+          "pos": "NN",
+          "stem": "fishing",
+          "range": {
+            "start": 42,
+            "end": 49
+          }
+        },
+        {
+          "t": "families",
+          "pos": "NNS",
+          "stem": "familie",
+          "range": {
+            "start": 50,
+            "end": 58
+          }
+        },
+        {
+          "t": "sharing",
+          "pos": "NN",
+          "stem": "sharing",
+          "range": {
+            "start": 59,
+            "end": 66
+          }
+        },
+        {
+          "t": "a",
+          "pos": "DT",
+          "stem": "a",
+          "range": {
+            "start": 67,
+            "end": 68
+          }
+        },
+        {
+          "t": "single",
+          "pos": "NN",
+          "stem": "single",
+          "range": {
+            "start": 69,
+            "end": 75
+          }
+        },
+        {
+          "t": "cold-storage",
+          "pos": "NN",
+          "stem": "cold-storage",
+          "range": {
+            "start": 76,
+            "end": 88
+          }
+        },
+        {
+          "t": "shed",
+          "pos": "NN",
+          "stem": "shed",
+          "range": {
+            "start": 89,
+            "end": 93
+          }
+        },
+        {
+          "t": "on",
+          "pos": "IN",
+          "stem": "on",
+          "range": {
+            "start": 94,
+            "end": 96
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 97,
+            "end": 100
+          }
+        },
+        {
+          "t": "east",
+          "pos": "NN",
+          "stem": "east",
+          "range": {
+            "start": 101,
+            "end": 105
+          }
+        },
+        {
+          "t": "dock",
+          "pos": "NN",
+          "stem": "dock",
+          "range": {
+            "start": 106,
+            "end": 110
+          }
+        },
+        {
+          "t": "of",
+          "pos": "IN",
+          "stem": "of",
+          "range": {
+            "start": 111,
+            "end": 113
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 114,
+            "end": 117
+          }
+        },
+        {
+          "t": "Port",
+          "pos": "NNP",
+          "stem": "port",
+          "range": {
+            "start": 118,
+            "end": 122
+          }
+        },
+        {
+          "t": "of",
+          "pos": "IN",
+          "stem": "of",
+          "range": {
+            "start": 123,
+            "end": 125
+          }
+        },
+        {
+          "t": "Kellvik",
+          "pos": "NNP",
+          "stem": "kellvik",
+          "range": {
+            "start": 126,
+            "end": 133
+          }
+        },
+        {
+          "t": ".",
+          "pos": ".",
+          "range": {
+            "start": 133,
+            "end": 134
+          }
+        }
+      ],
+      "entities": [
+        {
+          "text": "Port of Kellvik",
+          "label": "GPE",
+          "range": {
+            "start": 118,
+            "end": 133
+          }
+        }
+      ],
+      "token_count": 23
+    },
+    {
+      "type": "segment",
+      "id": "s3",
+      "block": 3,
+      "kind": "blockquote",
+      "section": [
+        "1987",
+        "Founding"
+      ],
+      "range": {
+        "start": 167,
+        "end": 249
+      },
+      "text": "\"We never planned to be a business,\" said founder Marta Ilves in a 2015 interview.",
+      "plain": "\"We never planned to be a business,\" said founder Marta Ilves in a 2015 interview.",
+      "tts": "\"We never planned to be a business,\" said founder Marta Ilves in a 2015 interview.",
+      "tokens": [
+        {
+          "t": "\"",
+          "pos": ":",
+          "range": {
+            "start": 0,
+            "end": 1
+          }
+        },
+        {
+          "t": "We",
+          "pos": "PRP",
+          "stem": "we",
+          "range": {
+            "start": 1,
+            "end": 3
+          }
+        },
+        {
+          "t": "never",
+          "pos": "RB",
+          "stem": "never",
+          "range": {
+            "start": 4,
+            "end": 9
+          }
+        },
+        {
+          "t": "planned",
+          "pos": "NN",
+          "stem": "planned",
+          "range": {
+            "start": 10,
+            "end": 17
+          }
+        },
+        {
+          "t": "to",
+          "pos": "IN",
+          "stem": "to",
+          "range": {
+            "start": 18,
+            "end": 20
+          }
+        },
+        {
+          "t": "be",
+          "pos": "IN",
+          "stem": "be",
+          "range": {
+            "start": 21,
+            "end": 23
+          }
+        },
+        {
+          "t": "a",
+          "pos": "DT",
+          "stem": "a",
+          "range": {
+            "start": 24,
+            "end": 25
+          }
+        },
+        {
+          "t": "business",
+          "pos": "NNS",
+          "stem": "busine",
+          "range": {
+            "start": 26,
+            "end": 34
+          }
+        },
+        {
+          "t": ",",
+          "pos": ",",
+          "range": {
+            "start": 34,
+            "end": 35
+          }
+        },
+        {
+          "t": "\"",
+          "pos": ":",
+          "range": {
+            "start": 35,
+            "end": 36
+          }
+        },
+        {
+          "t": "said",
+          "pos": "VBD",
+          "stem": "said",
+          "range": {
+            "start": 37,
+            "end": 41
+          }
+        },
+        {
+          "t": "founder",
+          "pos": "NN",
+          "stem": "founder",
+          "range": {
+            "start": 42,
+            "end": 49
+          }
+        },
+        {
+          "t": "Marta",
+          "pos": "NNP",
+          "stem": "marta",
+          "range": {
+            "start": 50,
+            "end": 55
+          }
+        },
+        {
+          "t": "Ilves",
+          "pos": "NNP",
+          "stem": "ilves",
+          "range": {
+            "start": 56,
+            "end": 61
+          }
+        },
+        {
+          "t": "in",
+          "pos": "IN",
+          "stem": "in",
+          "range": {
+            "start": 62,
+            "end": 64
+          }
+        },
+        {
+          "t": "a",
+          "pos": "DT",
+          "stem": "a",
+          "range": {
+            "start": 65,
+            "end": 66
+          }
+        },
+        {
+          "t": "2015",
+          "pos": "CD",
+          "stem": "2015",
+          "range": {
+            "start": 67,
+            "end": 71
+          }
+        },
+        {
+          "t": "interview",
+          "pos": "NN",
+          "stem": "interview",
+          "range": {
+            "start": 72,
+            "end": 81
+          }
+        },
+        {
+          "t": ".",
+          "pos": ".",
+          "range": {
+            "start": 81,
+            "end": 82
+          }
+        }
+      ],
+      "entities": [
+        {
+          "text": "Marta Ilves",
+          "label": "PERSON",
+          "range": {
+            "start": 50,
+            "end": 61
+          }
+        }
+      ],
+      "token_count": 15
+    },
+    {
+      "type": "segment",
+      "id": "s4",
+      "block": 4,
+      "kind": "heading",
+      "level": 3,
+      "section": [
+        "2024"
+      ],
+      "range": {
+        "start": 255,
+        "end": 259
+      },
+      "text": "2024",
+      "plain": "2024",
+      "tts": "2024.",
+      "tokens": [
+        {
+          "t": "2024",
+          "pos": "CD",
+          "stem": "2024",
+          "range": {
+            "start": 0,
+            "end": 4
+          }
+        }
+      ],
+      "token_count": 1
+    },
+    {
+      "type": "segment",
+      "id": "s5",
+      "block": 5,
+      "kind": "heading",
+      "level": 4,
+      "section": [
+        "2024",
+        "Results"
+      ],
+      "range": {
+        "start": 266,
+        "end": 273
+      },
+      "text": "Results",
+      "plain": "Results",
+      "tts": "Results.",
+      "tokens": [
+        {
+          "t": "Results",
+          "pos": "NNS",
+          "stem": "result",
+          "range": {
+            "start": 0,
+            "end": 7
+          }
+        }
+      ],
+      "token_count": 1
+    },
+    {
+      "type": "segment",
+      "id": "s6",
+      "block": 6,
+      "kind": "paragraph",
+      "section": [
+        "2024",
+        "Results"
+      ],
+      "range": {
+        "start": 275,
+        "end": 390
+      },
+      "text": "Revenue grew 14% in 2024 to $2.3 billion, up from $2.02 billion the year before,\naccording to the audited accounts.",
+      "plain": "Revenue grew 14% in 2024 to $2.3 billion, up from $2.02 billion the year before, according to the audited accounts.",
+      "tts": "Revenue grew 14% in 2024 to $2.3 billion, up from $2.02 billion the year before, according to the audited accounts.",
+      "tokens": [
+        {
+          "t": "Revenue",
+          "pos": "NN",
+          "stem": "revenue",
+          "range": {
+            "start": 0,
+            "end": 7
+          }
+        },
+        {
+          "t": "grew",
+          "pos": "VBD",
+          "stem": "grew",
+          "range": {
+            "start": 8,
+            "end": 12
+          }
+        },
+        {
+          "t": "14%",
+          "pos": "CD",
+          "stem": "14%",
+          "range": {
+            "start": 13,
+            "end": 16
+          }
+        },
+        {
+          "t": "in",
+          "pos": "IN",
+          "stem": "in",
+          "range": {
+            "start": 17,
+            "end": 19
+          }
+        },
+        {
+          "t": "2024",
+          "pos": "CD",
+          "stem": "2024",
+          "range": {
+            "start": 20,
+            "end": 24
+          }
+        },
+        {
+          "t": "to",
+          "pos": "IN",
+          "stem": "to",
+          "range": {
+            "start": 25,
+            "end": 27
+          }
+        },
+        {
+          "t": "$2.3",
+          "pos": "CD",
+          "stem": "$2.3",
+          "range": {
+            "start": 28,
+            "end": 32
+          }
+        },
+        {
+          "t": "billion",
+          "pos": "NN",
+          "stem": "billion",
+          "range": {
+            "start": 33,
+            "end": 40
+          }
+        },
+        {
+          "t": ",",
+          "pos": ",",
+          "range": {
+            "start": 40,
+            "end": 41
+          }
+        },
+        {
+          "t": "up",
+          "pos": "IN",
+          "stem": "up",
+          "range": {
+            "start": 42,
+            "end": 44
+          }
+        },
+        {
+          "t": "from",
+          "pos": "IN",
+          "stem": "from",
+          "range": {
+            "start": 45,
+            "end": 49
+          }
+        },
+        {
+          "t": "$2.02",
+          "pos": "CD",
+          "stem": "$2.02",
+          "range": {
+            "start": 50,
+            "end": 55
+          }
+        },
+        {
+          "t": "billion",
+          "pos": "NN",
+          "stem": "billion",
+          "range": {
+            "start": 56,
+            "end": 63
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 64,
+            "end": 67
+          }
+        },
+        {
+          "t": "year",
+          "pos": "NN",
+          "stem": "year",
+          "range": {
+            "start": 68,
+            "end": 72
+          }
+        },
+        {
+          "t": "before",
+          "pos": "IN",
+          "stem": "before",
+          "range": {
+            "start": 73,
+            "end": 79
+          }
+        },
+        {
+          "t": ",",
+          "pos": ",",
+          "range": {
+            "start": 79,
+            "end": 80
+          }
+        },
+        {
+          "t": "according",
+          "pos": "NN",
+          "stem": "according",
+          "range": {
+            "start": 81,
+            "end": 90
+          }
+        },
+        {
+          "t": "to",
+          "pos": "IN",
+          "stem": "to",
+          "range": {
+            "start": 91,
+            "end": 93
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 94,
+            "end": 97
+          }
+        },
+        {
+          "t": "audited",
+          "pos": "NN",
+          "stem": "audited",
+          "range": {
+            "start": 98,
+            "end": 105
+          }
+        },
+        {
+          "t": "accounts",
+          "pos": "NNS",
+          "stem": "account",
+          "range": {
+            "start": 106,
+            "end": 114
+          }
+        },
+        {
+          "t": ".",
+          "pos": ".",
+          "range": {
+            "start": 114,
+            "end": 115
+          }
+        }
+      ],
+      "token_count": 20
+    },
+    {
+      "type": "segment",
+      "id": "s7",
+      "block": 7,
+      "kind": "paragraph",
+      "section": [
+        "2024",
+        "Results"
+      ],
+      "range": {
+        "start": 392,
+        "end": 510
+      },
+      "text": "The harbor smells of salt and diesel at dawn, and the gulls gather on the pilings\nlong before the first boats come in.",
+      "plain": "The harbor smells of salt and diesel at dawn, and the gulls gather on the pilings long before the first boats come in.",
+      "tts": "The harbor smells of salt and diesel at dawn, and the gulls gather on the pilings long before the first boats come in.",
+      "tokens": [
+        {
+          "t": "The",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 0,
+            "end": 3
+          }
+        },
+        {
+          "t": "harbor",
+          "pos": "NN",
+          "stem": "harbor",
+          "range": {
+            "start": 4,
+            "end": 10
+          }
+        },
+        {
+          "t": "smells",
+          "pos": "NNS",
+          "stem": "smell",
+          "range": {
+            "start": 11,
+            "end": 17
+          }
+        },
+        {
+          "t": "of",
+          "pos": "IN",
+          "stem": "of",
+          "range": {
+            "start": 18,
+            "end": 20
+          }
+        },
+        {
+          "t": "salt",
+          "pos": "NN",
+          "stem": "salt",
+          "range": {
+            "start": 21,
+            "end": 25
+          }
+        },
+        {
+          "t": "and",
+          "pos": "IN",
+          "stem": "and",
+          "range": {
+            "start": 26,
+            "end": 29
+          }
+        },
+        {
+          "t": "diesel",
+          "pos": "NN",
+          "stem": "diesel",
+          "range": {
+            "start": 30,
+            "end": 36
+          }
+        },
+        {
+          "t": "at",
+          "pos": "IN",
+          "stem": "at",
+          "range": {
+            "start": 37,
+            "end": 39
+          }
+        },
+        {
+          "t": "dawn",
+          "pos": "NN",
+          "stem": "dawn",
+          "range": {
+            "start": 40,
+            "end": 44
+          }
+        },
+        {
+          "t": ",",
+          "pos": ",",
+          "range": {
+            "start": 44,
+            "end": 45
+          }
+        },
+        {
+          "t": "and",
+          "pos": "IN",
+          "stem": "and",
+          "range": {
+            "start": 46,
+            "end": 49
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 50,
+            "end": 53
+          }
+        },
+        {
+          "t": "gulls",
+          "pos": "NNS",
+          "stem": "gull",
+          "range": {
+            "start": 54,
+            "end": 59
+          }
+        },
+        {
+          "t": "gather",
+          "pos": "NN",
+          "stem": "gather",
+          "range": {
+            "start": 60,
+            "end": 66
+          }
+        },
+        {
+          "t": "on",
+          "pos": "IN",
+          "stem": "on",
+          "range": {
+            "start": 67,
+            "end": 69
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 70,
+            "end": 73
+          }
+        },
+        {
+          "t": "pilings",
+          "pos": "NNS",
+          "stem": "piling",
+          "range": {
+            "start": 74,
+            "end": 81
+          }
+        },
+        {
+          "t": "long",
+          "pos": "NN",
+          "stem": "long",
+          "range": {
+            "start": 82,
+            "end": 86
+          }
+        },
+        {
+          "t": "before",
+          "pos": "IN",
+          "stem": "before",
+          "range": {
+            "start": 87,
+            "end": 93
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 94,
+            "end": 97
+          }
+        },
+        {
+          "t": "first",
+          "pos": "NN",
+          "stem": "first",
+          "range": {
+            "start": 98,
+            "end": 103
+          }
+        },
+        {
+          "t": "boats",
+          "pos": "NNS",
+          "stem": "boat",
+          "range": {
+            "start": 104,
+            "end": 109
+          }
+        },
+        {
+          "t": "come",
+          "pos": "NN",
+          "stem": "come",
+          "range": {
+            "start": 110,
+            "end": 114
+          }
+        },
+        {
+          "t": "in",
+          "pos": "IN",
+          "stem": "in",
+          "range": {
+            "start": 115,
+            "end": 117
+          }
+        },
+        {
+          "t": ".",
+          "pos": ".",
+          "range": {
+            "start": 117,
+            "end": 118
+          }
+        }
+      ],
+      "token_count": 23
+    },
+    {
+      "type": "segment",
+      "id": "s8",
+      "block": 8,
+      "kind": "list_item",
+      "section": [
+        "2024",
+        "Results"
+      ],
+      "range": {
+        "start": 514,
+        "end": 617
+      },
+      "text": "Members who miss the **March** registration deadline forfeit their catch share\n  for the entire season.",
+      "plain": "Members who miss the March registration deadline forfeit their catch share for the entire season.",
+      "tts": "Members who miss the March registration deadline forfeit their catch share for the entire season.",
+      "tokens": [
+        {
+          "t": "Members",
+          "pos": "NNS",
+          "stem": "member",
+          "range": {
+            "start": 0,
+            "end": 7
+          }
+        },
+        {
+          "t": "who",
+          "pos": "NN",
+          "stem": "who",
+          "range": {
+            "start": 8,
+            "end": 11
+          }
+        },
+        {
+          "t": "miss",
+          "pos": "NNS",
+          "stem": "mi",
+          "range": {
+            "start": 12,
+            "end": 16
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 17,
+            "end": 20
+          }
+        },
+        {
+          "t": "March",
+          "pos": "NNP",
+          "stem": "march",
+          "range": {
+            "start": 21,
+            "end": 26
+          }
+        },
+        {
+          "t": "registration",
+          "pos": "NN",
+          "stem": "registration",
+          "range": {
+            "start": 27,
+            "end": 39
+          }
+        },
+        {
+          "t": "deadline",
+          "pos": "NN",
+          "stem": "deadline",
+          "range": {
+            "start": 40,
+            "end": 48
+          }
+        },
+        {
+          "t": "forfeit",
+          "pos": "NN",
+          "stem": "forfeit",
+          "range": {
+            "start": 49,
+            "end": 56
+          }
+        },
+        {
+          "t": "their",
+          "pos": "NN",
+          "stem": "their",
+          "range": {
+            "start": 57,
+            "end": 62
+          }
+        },
+        {
+          "t": "catch",
+          "pos": "NN",
+          "stem": "catch",
+          "range": {
+            "start": 63,
+            "end": 68
+          }
+        },
+        {
+          "t": "share",
+          "pos": "NN",
+          "stem": "share",
+          "range": {
+            "start": 69,
+            "end": 74
+          }
+        },
+        {
+          "t": "for",
+          "pos": "NN",
+          "stem": "for",
+          "range": {
+            "start": 75,
+            "end": 78
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 79,
+            "end": 82
+          }
+        },
+        {
+          "t": "entire",
+          "pos": "NN",
+          "stem": "entire",
+          "range": {
+            "start": 83,
+            "end": 89
+          }
+        },
+        {
+          "t": "season",
+          "pos": "NN",
+          "stem": "season",
+          "range": {
+            "start": 90,
+            "end": 96
+          }
+        },
+        {
+          "t": ".",
+          "pos": ".",
+          "range": {
+            "start": 96,
+            "end": 97
+          }
+        }
+      ],
+      "token_count": 15
+    },
+    {
+      "type": "segment",
+      "id": "s9",
+      "block": 9,
+      "kind": "paragraph",
+      "section": [
+        "2024",
+        "Results"
+      ],
+      "range": {
+        "start": 619,
+        "end": 718
+      },
+      "text": "The plant processed 18,600 tonnes of fish in 2024, of which 62% was exported to the\nEuropean Union.",
+      "plain": "The plant processed 18,600 tonnes of fish in 2024, of which 62% was exported to the European Union.",
+      "tts": "The plant processed 18,600 tonnes of fish in 2024, of which 62% was exported to the European Union.",
+      "tokens": [
+        {
+          "t": "The",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 0,
+            "end": 3
+          }
+        },
+        {
+          "t": "plant",
+          "pos": "NN",
+          "stem": "plant",
+          "range": {
+            "start": 4,
+            "end": 9
+          }
+        },
+        {
+          "t": "processed",
+          "pos": "NN",
+          "stem": "processed",
+          "range": {
+            "start": 10,
+            "end": 19
+          }
+        },
+        {
+          "t": "18,600",
+          "pos": "CD",
+          "stem": "18,600",
+          "range": {
+            "start": 20,
+            "end": 26
+          }
+        },
+        {
+          "t": "tonnes",
+          "pos": "NNS",
+          "stem": "tonne",
+          "range": {
+            "start": 27,
+            "end": 33
+          }
+        },
+        {
+          "t": "of",
+          "pos": "IN",
+          "stem": "of",
+          "range": {
+            "start": 34,
+            "end": 36
+          }
+        },
+        {
+          "t": "fish",
+          "pos": "NN",
+          "stem": "fish",
+          "range": {
+            "start": 37,
+            "end": 41
+          }
+        },
+        {
+          "t": "in",
+          "pos": "IN",
+          "stem": "in",
+          "range": {
+            "start": 42,
+            "end": 44
+          }
+        },
+        {
+          "t": "2024",
+          "pos": "CD",
+          "stem": "2024",
+          "range": {
+            "start": 45,
+            "end": 49
+          }
+        },
+        {
+          "t": ",",
+          "pos": ",",
+          "range": {
+            "start": 49,
+            "end": 50
+          }
+        },
+        {
+          "t": "of",
+          "pos": "IN",
+          "stem": "of",
+          "range": {
+            "start": 51,
+            "end": 53
+          }
+        },
+        {
+          "t": "which",
+          "pos": "IN",
+          "stem": "which",
+          "range": {
+            "start": 54,
+            "end": 59
+          }
+        },
+        {
+          "t": "62%",
+          "pos": "CD",
+          "stem": "62%",
+          "range": {
+            "start": 60,
+            "end": 63
+          }
+        },
+        {
+          "t": "was",
+          "pos": "VBD",
+          "stem": "was",
+          "range": {
+            "start": 64,
+            "end": 67
+          }
+        },
+        {
+          "t": "exported",
+          "pos": "NN",
+          "stem": "exported",
+          "range": {
+            "start": 68,
+            "end": 76
+          }
+        },
+        {
+          "t": "to",
+          "pos": "IN",
+          "stem": "to",
+          "range": {
+            "start": 77,
+            "end": 79
+          }
+        },
+        {
+          "t": "the",
+          "pos": "DT",
+          "stem": "the",
+          "range": {
+            "start": 80,
+            "end": 83
+          }
+        },
+        {
+          "t": "European",
+          "pos": "NNP",
+          "stem": "european",
+          "range": {
+            "start": 84,
+            "end": 92
+          }
+        },
+        {
+          "t": "Union",
+          "pos": "NNP",
+          "stem": "union",
+          "range": {
+            "start": 93,
+            "end": 98
+          }
+        },
+        {
+          "t": ".",
+          "pos": ".",
+          "range": {
+            "start": 98,
+            "end": 99
+          }
+        }
+      ],
+      "entities": [
+        {
+          "text": "European Union",
+          "label": "ORGANIZATION",
+          "range": {
+            "start": 84,
+            "end": 98
+          }
+        }
+      ],
+      "token_count": 18
+    }
+  ]
+}

@@ -1,6 +1,7 @@
-// Command tev1-rank is stage 1 of the infographic pipeline: it segments a
-// plain-text document, has a tev1 decision model (served by Ollama) classify
-// and score each segment, and writes a ranked list for the next stage.
+// Command tev1-rank is stage 1 of the infographic pipeline: it takes the
+// segments and annotations produced by the text-preparation tool, has a tev1
+// decision model (served by Ollama) classify and score each segment, and
+// writes a ranked list for the next stage.
 package main
 
 import (

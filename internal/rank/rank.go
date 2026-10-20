@@ -12,7 +12,7 @@ import (
 	"unicode"
 
 	"github.com/s0cks/tev1-rank/internal/config"
-	"github.com/s0cks/tev1-rank/internal/features"
+	"github.com/s0cks/tev1-rank/internal/input"
 	"github.com/s0cks/tev1-rank/internal/tev1"
 )
 
@@ -106,29 +106,27 @@ func normalise(probs map[string]float64, choice string) map[string]float64 {
 }
 
 // FeatureBonus is a weighted average, in [0,1], of saturating feature values.
-func FeatureBonus(cfg config.RankingConfig, f features.Features) float64 {
+// The features are the counts derived from the upstream annotations
+// (see input.Features); feature_weights names other than "numerics" and
+// "entities" are ignored (config.Warnings reports them).
+func FeatureBonus(cfg config.RankingConfig, f input.Features) float64 {
 	sat := cfg.FeatureSaturation
 	if sat <= 0 {
 		sat = 2
 	}
 	vals := map[string]float64{
-		"numbers": float64(f.Numbers), "percentages": float64(f.Percentages),
-		"currency": float64(f.Currency), "years": float64(f.Years),
-		"dates": float64(f.Dates), "entities": float64(f.Entities),
+		"numerics": float64(f.Numerics), "entities": float64(f.Entities),
 	}
 	var num, den float64
 	for name, w := range cfg.FeatureWeights {
 		if w <= 0 {
 			continue
 		}
-		var v float64
-		if name == "term_weight" {
-			v = clamp01(f.TermWeight)
-		} else if c, ok := vals[name]; ok {
-			v = math.Min(1, c/sat)
-		} else {
+		c, ok := vals[name]
+		if !ok {
 			continue
 		}
+		v := math.Min(1, c/sat)
 		num += w * v
 		den += w
 	}

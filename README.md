@@ -1,15 +1,20 @@
 # tev1-rank
 
-Stage 1 of the infographic pipeline. Splits a stripped-down plain-text file into segments, has a
-**tev1** decision model (via Ollama's `/v1/systemone`) classify and score each one, and writes a
-ranked list for the later stages. It does not build Qwen JSON, layout, rendering or QA.
+Stage 1 of the infographic pipeline. Takes the segments and annotations produced by the
+text-preparation tool (a `segments.json` with one entry per heading, paragraph, block quote or list
+item, each with plain text, POS-tagged tokens and named entities), has a **tev1** decision model
+(via Ollama's `/v1/systemone`) classify and score each one, and writes a ranked list for the later
+stages. It does no segmenting or text analysis of its own, and it does not build Qwen JSON, layout,
+rendering or QA.
 
 ```
-input.txt ─► segmenter ─► features ─► tev1 request 1: kind ──► "other"? ─► done (not a datapoint)
-                (no model)  (no model)                              │ no
-                                                  tev1 request 2: importance ─► score ─► rank/dedupe/select
-                                                  (cached on disk, sequential)           scored.jsonl  top.json  run.json
+segments.json ─► load + validate ─► tev1 request 1: kind ──► "other"? ─► done (not a datapoint)
+ (upstream tool)    (no model)                                  │ no
+                                       tev1 request 2: importance ─► score ─► rank/dedupe/select
+                                       (cached on disk, sequential)           scored.jsonl  top.json  run.json
 ```
+
+The expected input is described in [docs/input-format.md](docs/input-format.md).
 
 ## Quick start
 
@@ -17,11 +22,11 @@ input.txt ─► segmenter ─► features ─► tev1 request 1: kind ──►
 go mod tidy                       # first time only (resolves go.sum)
 go build -o bin/tev1-rank .
 
-./bin/tev1-rank segments testdata/sample.txt                       # segmenter only, no model
-./bin/tev1-rank rank testdata/sample.txt --no-model --out-dir out  # deterministic features only (works in CI)
-./bin/tev1-rank rank testdata/sample.txt --out-dir out --top 10    # full run (needs Ollama >= 0.35 + tev1:0.8b)
-./bin/tev1-rank eval testdata/labels.example.jsonl                 # accuracy / per-kind P&R / precision@K
-./bin/tev1-rank config > my.json                                   # dump defaults, edit, pass with --config my.json
+./bin/tev1-rank validate segments.json                           # parse and summarise the upstream file, no model
+./bin/tev1-rank rank segments.json --no-model --out-dir out      # annotation counts only (works in CI)
+./bin/tev1-rank rank segments.json --out-dir out --top 10        # full run (needs Ollama >= 0.35 + tev1:0.8b)
+./bin/tev1-rank eval testdata/labels.example.jsonl               # accuracy / per-kind P&R / precision@K
+./bin/tev1-rank config > my.json                                 # dump defaults, edit, pass with --config my.json
 ```
 
 Useful flags: `--model tev1:4b`, `--top N`, `--min-score S`, `--max-per-kind N`, `--no-cache`,
@@ -69,16 +74,16 @@ larger `num_ctx`, shorter questions).
 
 | path | purpose |
 |---|---|
-| `internal/segment` | deterministic paragraph/sentence segmenter (byte offsets, sha256 hashes) |
-| `internal/features` | numbers, %, currency, years/dates, entities, TF-IDF-style term weight |
+| `internal/input` | reads and validates the upstream `segments.json`; derives the annotation counts used for ranking |
 | `internal/tev1` | `/v1/systemone` client: ordered questions, tolerant parsing, retries, preflight |
 | `internal/config` | embedded `default.json`, file overrides (strict), `question_set_hash` |
 | `internal/rank` | score, review flags, dedupe, selection (`--top/--min-score/--max-per-kind`) |
-| `internal/cache` | on-disk answer cache keyed by `sha256(model + question_set_hash + segment hash)` |
+| `internal/cache` | on-disk answer cache keyed by `sha256(model + question_set_hash + hash of the segment text and, if sent, its feature counts)` |
 | `internal/pipeline` | orchestration, outputs, manifest |
 | `internal/evaluate` | `eval` metrics |
 | `schema/top.schema.json` | JSON Schema for `top.json` |
-| `docs/` | `tev1-api.md`, `output-format.md` |
+| `docs/` | `input-format.md`, `output-format.md`, `tev1-api.md` |
+| `testdata/` | `segments.sample.json` (upstream-shaped sample) and the `sample.md` it was cut from; `api/` fixtures; `labels.example.jsonl` |
 
 ## Tests
 

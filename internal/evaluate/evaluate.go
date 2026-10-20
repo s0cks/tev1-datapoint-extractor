@@ -12,10 +12,9 @@ import (
 	"strings"
 
 	"github.com/s0cks/tev1-rank/internal/config"
-	"github.com/s0cks/tev1-rank/internal/features"
+	"github.com/s0cks/tev1-rank/internal/input"
 	"github.com/s0cks/tev1-rank/internal/pipeline"
 	"github.com/s0cks/tev1-rank/internal/rank"
-	"github.com/s0cks/tev1-rank/internal/segment"
 )
 
 // Label is one line of the labels file:
@@ -232,18 +231,24 @@ func Compute(labels []Label, preds []Prediction, ks []int) Report {
 	return r
 }
 
-// Run classifies every label as a stand-alone segment and computes the report.
-// In no-model mode only precision@K (a features-only baseline) is meaningful.
+// Run classifies every label as a stand-alone paragraph and computes the report.
+//
+// Labels are bare text with no upstream annotations, so they carry no
+// features, and a features-only baseline would rank everything equally;
+// Run therefore needs the model.
 func Run(ctx context.Context, cl *pipeline.Classifier, labels []Label, ks []int) (Report, error) {
-	segs := make([]segment.Segment, len(labels))
-	total := 0
+	if cl.NoModel {
+		return Report{}, fmt.Errorf("eval needs the model: labels are bare text without upstream annotations, so there is nothing to rank without it")
+	}
+	segs := make([]input.Segment, len(labels))
 	for i, l := range labels {
-		h := segment.HashText(l.Text)
-		segs[i] = segment.Segment{ID: fmt.Sprintf("label-%04d", i+1), Start: 0, End: len(l.Text), Text: l.Text, Hash: h}
-		total += len(l.Text)
+		segs[i] = input.Segment{
+			ID: fmt.Sprintf("label-%04d", i+1), Kind: "paragraph", Section: []string{},
+			Range: input.Range{End: len(l.Text)}, Text: l.Text, Plain: l.Text, Hash: input.HashText(l.Text),
+		}
 	}
 
-	feats := features.ComputeAll(segs, total)
+	feats := make([]input.Features, len(segs))
 	recs, err := cl.BuildRecords(ctx, segs, feats)
 	if err != nil {
 		return Report{}, err
@@ -262,12 +267,7 @@ func Run(ctx context.Context, cl *pipeline.Classifier, labels []Label, ks []int)
 	}
 
 	rep := Compute(labels, preds, ks)
-	rep.Mode = "model"
-	if cl.NoModel {
-		rep.Mode, rep.Errors = "no-model", 0
-	} else {
-		rep.Model = cl.Cfg.Model
-	}
+	rep.Mode, rep.Model = "model", cl.Cfg.Model
 
 	return rep, nil
 }

@@ -1,4 +1,4 @@
-// Package pipeline wires the segmenter, tev1 classifier, cache and ranking
+// Package pipeline wires the input reader, tev1 classifier, cache and ranking
 // together and writes the stage-1 outputs.
 package pipeline
 
@@ -15,9 +15,8 @@ import (
 
 	"github.com/s0cks/tev1-rank/internal/cache"
 	"github.com/s0cks/tev1-rank/internal/config"
-	"github.com/s0cks/tev1-rank/internal/features"
+	"github.com/s0cks/tev1-rank/internal/input"
 	"github.com/s0cks/tev1-rank/internal/rank"
-	"github.com/s0cks/tev1-rank/internal/segment"
 	"github.com/s0cks/tev1-rank/internal/tev1"
 )
 
@@ -38,12 +37,20 @@ const maxConsecutiveFailures = 5
 
 // Record is one line of scored.jsonl.
 type Record struct {
-	ID       string            `json:"id"`
-	Start    int               `json:"start"`
-	End      int               `json:"end"`
-	Hash     string            `json:"hash"`
-	Text     string            `json:"text"`
-	Features features.Features `json:"features"`
+	ID string `json:"id"`
+	// Block and BlockKind (heading, paragraph, ...) and Section (the heading
+	// path) come from the upstream tool.
+	Block     int      `json:"block"`
+	BlockKind string   `json:"block_kind"`
+	Section   []string `json:"section"`
+	// Start and End are byte offsets into the SOURCE document the upstream
+	// tool segmented, not into the segments file.
+	Start int `json:"start"`
+	End   int `json:"end"`
+	// Hash is the sha256 of Text, the plain text the model sees.
+	Hash     string         `json:"hash"`
+	Text     string         `json:"text"`
+	Features input.Features `json:"features"`
 
 	ScoredBy       string                 `json:"scored_by"`
 	Answers        map[string]tev1.Answer `json:"answers,omitempty"`
@@ -139,14 +146,12 @@ type state struct {
 	Kind string `json:"kind,omitempty"`
 }
 
-// buildState renders the model input. Text beyond MaxTextBytes is cut on a
-// rune boundary because tev1 only has a ~2k-token context. kind is empty for the
-// classification request and the chosen kind for the importance request.
-func (cl *Classifier) buildState(text string, f features.Features, kind string) (any, bool) {
+// buildState renders the model input from the segment's plain text. Text beyond
+// MaxTextBytes is cut on a rune boundary because tev1 only has a ~2k-token
+// context. kind is empty for the classification request and the chosen kind for
+// the importance request.
+func (cl *Classifier) buildState(text string, f input.Features, kind string) (any, bool) {
 	truncated := false
-	if cl.Cfg.State.NormalizeText {
-		text = segment.NormalizeText(text)
-	}
 	if max := cl.Cfg.State.MaxTextBytes; max > 0 && len(text) > max {
 		cut := max
 		for cut > 0 && !utf8.RuneStart(text[cut]) {
@@ -169,16 +174,17 @@ func round6(x float64) float64 { return math.Round(x*1e6) / 1e6 }
 // BuildRecords segments are classified (or scored from features only) and
 // turned into unranked Records. On context cancellation it returns ctx.Err()
 // (everything already classified stays in the cache).
-func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, feats []features.Features) ([]Record, error) {
+func (cl *Classifier) BuildRecords(ctx context.Context, segs []input.Segment, feats []input.Features) ([]Record, error) {
 	cfg := cl.Cfg
 	cl.qsHash = cfg.QuestionSetHash()
 	recs := make([]Record, len(segs))
 	for i, s := range segs {
 		f := feats[i]
-		f.Position, f.TermWeight = round6(f.Position), round6(f.TermWeight)
+		f.Position = round6(f.Position)
 		recs[i] = Record{
-			ID: s.ID, Start: s.Start, End: s.End, Hash: s.Hash, Text: s.Text, Features: f,
-			ScoredBy: ScoredByFeatures, normHash: rank.NormalizedHash(s.Text),
+			ID: s.ID, Block: s.Block, BlockKind: s.Kind, Section: append([]string{}, s.Section...),
+			Start: s.Range.Start, End: s.Range.End, Hash: s.Hash, Text: s.Plain, Features: f,
+			ScoredBy: ScoredByFeatures, normHash: rank.NormalizedHash(s.Plain),
 			FeatureBonus: round6(rank.FeatureBonus(cfg.Ranking, f)),
 		}
 		recs[i].FinalScore = recs[i].FeatureBonus
@@ -270,10 +276,10 @@ loop:
 //  2. importance: how much the datapoint matters, given its kind.
 //
 // Both outcomes are cached, so a rejected segment is not asked about again.
-func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f features.Features, rec *Record) (map[string]tev1.Answer, rank.Signals, tev1.Usage, bool, error) {
-	st, truncated := cl.buildState(seg.Text, f, "")
+func (cl *Classifier) classifyOne(ctx context.Context, seg input.Segment, f input.Features, rec *Record) (map[string]tev1.Answer, rank.Signals, tev1.Usage, bool, error) {
+	st, truncated := cl.buildState(seg.Plain, f, "")
 	rec.StateTruncated = truncated
-	key := cache.Key(cl.Cfg.Model, cl.qsHash, seg.Hash)
+	key := cache.Key(cl.Cfg.Model, cl.qsHash, cl.cacheID(seg, f))
 	if cl.Cache != nil {
 		if ans, usage, ok := cl.Cache.Get(key); ok {
 			if sig, err := rank.ExtractSignals(cl.Cfg, ans); err == nil {
@@ -309,7 +315,7 @@ func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f fe
 		cl.log().Debug("not a datapoint; skipping importance", "segment", seg.ID)
 	} else {
 		cl.log().Debug("scoring importance", "segment", seg.ID, "kind", kind)
-		kindState, _ := cl.buildState(seg.Text, f, kind)
+		kindState, _ := cl.buildState(seg.Plain, f, kind)
 		resp, err := cl.decide(ctx, kindState, iq)
 		if err != nil {
 			return nil, none, tev1.Usage{}, false, err
@@ -380,10 +386,15 @@ func Finalize(recs []Record, sel rank.SelectOptions) []int {
 	return chosen
 }
 
-// Analyze runs the deterministic half of the pipeline on text.
-func Analyze(text string, opt segment.Options) ([]segment.Segment, []features.Features) {
-	segs := segment.Split(text, opt)
-	return segs, features.ComputeAll(segs, len(text))
+// cacheID identifies everything about a segment that reaches the model: its
+// plain text and, when state.include_features is on, the feature counts sent
+// with it. The counts come from the upstream annotations, so the same text can
+// arrive with different counts if the upstream tool changes.
+func (cl *Classifier) cacheID(seg input.Segment, f input.Features) string {
+	if !cl.Cfg.State.IncludeFeatures {
+		return seg.Hash
+	}
+	return input.HashText(seg.Hash + "\n" + f.Summary())
 }
 
 // IsCanceled reports whether err is a cancellation.
@@ -391,7 +402,7 @@ func IsCanceled(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-func hashBytes(b []byte) string { return segment.HashText(string(b)) }
+func hashBytes(b []byte) string { return input.HashText(string(b)) }
 
 // noteUsage accumulates token counts and warns when a request approaches the
 // context window. tev1 has a small (~2k token) context, and the question set
@@ -413,6 +424,6 @@ func (cl *Classifier) noteUsage(u tev1.Usage) {
 	if ctxTok := cl.Cfg.State.ContextTokens; ctxTok > 0 && newMax && float64(u.InputTokens) > 0.9*float64(ctxTok) {
 		cl.log().Warn("request is close to the model context window; long segments may be truncated or rejected",
 			"input_tokens", u.InputTokens, "context_tokens", ctxTok,
-			"hint", "shorten question descriptions or lower segmenter.hard_max_bytes / state.max_text_bytes")
+			"hint", "shorten question descriptions or lower state.max_text_bytes")
 	}
 }

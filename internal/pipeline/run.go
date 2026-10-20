@@ -13,15 +13,15 @@ import (
 
 	"github.com/s0cks/tev1-rank/internal/cache"
 	"github.com/s0cks/tev1-rank/internal/config"
-	"github.com/s0cks/tev1-rank/internal/features"
+	"github.com/s0cks/tev1-rank/internal/input"
 	"github.com/s0cks/tev1-rank/internal/rank"
 	"github.com/s0cks/tev1-rank/internal/tev1"
 )
 
 // Schema identifiers written into the outputs.
 const (
-	TopSchemaVersion = "tev1-rank/top/v2"
-	RunSchemaVersion = "tev1-rank/run/v1"
+	TopSchemaVersion = "tev1-rank/top/v3"
+	RunSchemaVersion = "tev1-rank/run/v2"
 )
 
 // Options configure Run.
@@ -68,10 +68,16 @@ type ToolInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
+
+// InputInfo describes the segments file that was read.
 type InputInfo struct {
 	Path  string `json:"path"`
 	Hash  string `json:"hash"`
 	Bytes int    `json:"bytes"`
+	// Source and Format are the upstream tool's description of the document it
+	// segmented (e.g. "main.md", "md").
+	Source string `json:"source"`
+	Format string `json:"format"`
 }
 type ModelInfo struct {
 	Name            string `json:"name"`
@@ -86,6 +92,7 @@ type SelectionInfo struct {
 }
 type Counts struct {
 	Segments          int `json:"segments"`
+	SkippedEntries    int `json:"skipped_entries"` // entries of the input ignored: unknown type, or no text
 	Duplicates        int `json:"duplicates"`
 	Ranked            int `json:"ranked"`
 	Selected          int `json:"selected"`
@@ -100,7 +107,7 @@ type Counts struct {
 	OutputTokens      int `json:"output_tokens"`
 }
 type Timings struct {
-	Segment   int64 `json:"segment"`
+	Load      int64 `json:"load"`
 	Preflight int64 `json:"preflight"`
 	Classify  int64 `json:"classify"`
 	Total     int64 `json:"total"`
@@ -138,7 +145,7 @@ func NewCache(noCache bool, dir string) (*cache.Cache, error) {
 	return &cache.Cache{Dir: dir}, nil
 }
 
-// Run executes the full stage: segment → classify → rank → write outputs.
+// Run executes the full stage: load segments → classify → rank → write outputs.
 func Run(ctx context.Context, opt Options) (*Result, error) {
 	log := opt.Logger
 	if log == nil {
@@ -151,18 +158,16 @@ func Run(ctx context.Context, opt Options) (*Result, error) {
 	cfg := opt.Config
 	started := now()
 
-	data, err := os.ReadFile(opt.InputPath)
+	t0 := time.Now()
+	doc, data, err := input.Load(opt.InputPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading input: %w", err)
 	}
-	text := string(data)
-
-	t0 := time.Now()
-	segs, feats := Analyze(text, cfg.Segmenter)
-	tSegment := time.Since(t0)
-	log.Info("segmented", "input", opt.InputPath, "segments", len(segs))
+	segs, feats := doc.Segments, doc.Features()
+	tLoad := time.Since(t0)
+	log.Info("loaded segments", "input", opt.InputPath, "source", doc.Source, "segments", len(segs), "skipped", doc.Skipped)
 	if len(segs) == 0 {
-		log.Warn("input produced no segments")
+		log.Warn("input contains no segments")
 	}
 
 	client := opt.Client
@@ -200,7 +205,7 @@ func Run(ctx context.Context, opt Options) (*Result, error) {
 		Tool:          ToolInfo{Name: "tev1-rank", Version: Version},
 		StartedAt:     started.UTC(),
 		Mode:          "model",
-		Input:         InputInfo{Path: opt.InputPath, Hash: hashBytes(data), Bytes: len(data)},
+		Input:         InputInfo{Path: opt.InputPath, Hash: hashBytes(data), Bytes: len(data), Source: doc.Source, Format: doc.Format},
 		Config:        cfg,
 		Selection:     SelectionInfo{Top: opt.Select.Top, MinScore: opt.Select.MinScore, MaxPerKind: opt.Select.MaxPerKind},
 		Outputs:       Outputs{Scored: "scored.jsonl", Top: "top.json"},
@@ -211,7 +216,7 @@ func Run(ctx context.Context, opt Options) (*Result, error) {
 		m.Model = &ModelInfo{Name: cfg.Model, OllamaVersion: ollamaVersion, QuestionSetHash: cfg.QuestionSetHash(), StateFormat: cfg.StateFormat()}
 	}
 	m.Counts = Counts{
-		Segments: len(recs), Selected: len(chosen), ModelCalls: stats.ModelCalls, ImportanceSkipped: stats.ImportanceSkipped,
+		Segments: len(recs), SkippedEntries: doc.Skipped, Selected: len(chosen), ModelCalls: stats.ModelCalls, ImportanceSkipped: stats.ImportanceSkipped,
 		CacheHits: stats.CacheHits, CacheMisses: stats.CacheMisses, ModelErrors: stats.Errors,
 		ContextExceeded: stats.ContextExceeded, InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
 	}
@@ -227,7 +232,7 @@ func Run(ctx context.Context, opt Options) (*Result, error) {
 	}
 	m.FinishedAt = now().UTC()
 	m.TimingsMS = Timings{
-		Segment: tSegment.Milliseconds(), Preflight: tPreflight.Milliseconds(), Classify: tClassify.Milliseconds(),
+		Load: tLoad.Milliseconds(), Preflight: tPreflight.Milliseconds(), Classify: tClassify.Milliseconds(),
 		Total: time.Since(t0).Milliseconds(), ModelTime: stats.ModelTime.Milliseconds(),
 	}
 
@@ -254,24 +259,31 @@ type TopFile struct {
 	Items           []TopItem     `json:"items"`
 }
 
+// TopSource identifies the document the segments came from. File and Format
+// are as reported by the upstream tool; SegmentsHash is the sha256 of the
+// segments file that was read.
 type TopSource struct {
-	File string `json:"file"`
-	Hash string `json:"hash"`
+	File         string `json:"file"`
+	Format       string `json:"format"`
+	SegmentsHash string `json:"segments_hash"`
 }
 
 type TopItem struct {
-	Rank          int               `json:"rank"`
-	ID            string            `json:"id"`
-	Hash          string            `json:"hash"`
-	Start         int               `json:"start"`
-	End           int               `json:"end"`
-	Text          string            `json:"text"`
-	Kind          *string           `json:"kind"`
-	FinalScore    float64           `json:"final_score"`
-	NeedsReview   bool              `json:"needs_review"`
-	ReviewReasons []string          `json:"review_reasons"`
-	Features      features.Features `json:"features"`
-	Model         *TopModel         `json:"model"`
+	Rank          int            `json:"rank"`
+	ID            string         `json:"id"`
+	Hash          string         `json:"hash"`
+	Block         int            `json:"block"`
+	BlockKind     string         `json:"block_kind"`
+	Section       []string       `json:"section"`
+	Start         int            `json:"start"`
+	End           int            `json:"end"`
+	Text          string         `json:"text"`
+	Kind          *string        `json:"kind"`
+	FinalScore    float64        `json:"final_score"`
+	NeedsReview   bool           `json:"needs_review"`
+	ReviewReasons []string       `json:"review_reasons"`
+	Features      input.Features `json:"features"`
+	Model         *TopModel      `json:"model"`
 }
 
 // TopModel is a compact view of the model's answers.
@@ -286,7 +298,7 @@ type TopModel struct {
 func BuildTop(m Manifest, recs []Record, chosen []int) TopFile {
 	t := TopFile{
 		SchemaVersion: TopSchemaVersion, Mode: m.Mode,
-		Source:    TopSource{File: filepath.Base(m.Input.Path), Hash: m.Input.Hash},
+		Source:    TopSource{File: m.Input.Source, Format: m.Input.Format, SegmentsHash: m.Input.Hash},
 		Selection: m.Selection, Count: len(chosen), Items: []TopItem{},
 	}
 	if m.Model != nil {
@@ -296,7 +308,8 @@ func BuildTop(m Manifest, recs []Record, chosen []int) TopFile {
 	for _, i := range chosen {
 		r := recs[i]
 		item := TopItem{
-			Rank: *r.Rank, ID: r.ID, Hash: r.Hash, Start: r.Start, End: r.End, Text: r.Text,
+			Rank: *r.Rank, ID: r.ID, Hash: r.Hash, Block: r.Block, BlockKind: r.BlockKind, Section: r.Section,
+			Start: r.Start, End: r.End, Text: r.Text,
 			FinalScore: r.FinalScore, NeedsReview: r.NeedsReview, Features: r.Features,
 			ReviewReasons: append([]string{}, r.ReviewReasons...),
 		}

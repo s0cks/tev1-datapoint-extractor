@@ -174,3 +174,46 @@ func TestConfidenceQuestionsMustExist(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// The segmenter and text-normalisation settings are gone; a config file that
+// still has them must fail loudly rather than be silently half-applied.
+func TestRemovedSettingsAreRejected(t *testing.T) {
+	for name, body := range map[string]string{
+		"segmenter":      `{"segmenter":{"max_paragraph_bytes":600}}`,
+		"normalize_text": `{"state":{"normalize_text":true}}`,
+	} {
+		p := filepath.Join(t.TempDir(), "c.json")
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Errorf("%s: err = %v, want unknown field", name, err)
+		}
+	}
+}
+
+// feature_weights keys from the old regex features merge into the defaults but
+// mean nothing now; that must be reported.
+func TestOldFeatureWeightsWarn(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.json")
+	if err := os.WriteFile(p, []byte(`{"ranking":{"feature_weights":{"years":0.3,"term_weight":0.1}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range c.Warnings() {
+		found = found || (strings.Contains(w, "feature_weights") && strings.Contains(w, "term_weight") && strings.Contains(w, "years"))
+	}
+	if !found {
+		t.Errorf("no warning for stale feature weights: %v", c.Warnings())
+	}
+	d, _ := Load("")
+	for _, w := range d.Warnings() {
+		if strings.Contains(w, "feature_weights") {
+			t.Errorf("defaults warn about feature weights: %s", w)
+		}
+	}
+}

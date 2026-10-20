@@ -20,7 +20,7 @@ func newEval() *cobra.Command {
 		Short: "Score the classifier against a hand-labeled set",
 		Long: `Each line of the labels file is {"text": "...", "is_datapoint": true, "kind": "stats"}
 ("kind" is optional; "other" means not a datapoint and must go with is_datapoint=false).
-Every label is classified as a stand-alone segment. Prints is_datapoint accuracy
+Every label is classified as a stand-alone paragraph (it has no upstream annotations, so --no-model is not supported here). Prints is_datapoint accuracy
 (predicted kind != other), per-kind precision/recall, a kind confusion matrix, and
 precision@K of the ranking.
 Run it once per model (--model tev1:0.8b, --model tev1:4b) to compare them.`,
