@@ -11,7 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/s0cks/tev1-rank/internal/cli"
+	"github.com/s0cks/tev1-rank/cmd"
 	"github.com/s0cks/tev1-rank/internal/pipeline"
 )
 
@@ -19,7 +19,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := cli.NewRoot().ExecuteContext(ctx); err != nil {
+	if err := cmd.NewRoot().ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		if ctx.Err() != nil || (errors.Is(err, context.Canceled) && pipeline.IsCanceled(err)) {
 			stop()

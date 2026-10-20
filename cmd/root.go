@@ -1,5 +1,5 @@
 // Package cli defines the cobra command tree.
-package cli
+package cmd
 
 import (
 	"fmt"
