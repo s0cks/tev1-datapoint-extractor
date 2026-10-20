@@ -20,7 +20,7 @@ import (
 
 // Schema identifiers written into the outputs.
 const (
-	TopSchemaVersion = "tev1-rank/top/v1"
+	TopSchemaVersion = "tev1-rank/top/v2"
 	RunSchemaVersion = "tev1-rank/run/v1"
 )
 
@@ -85,18 +85,19 @@ type SelectionInfo struct {
 	MaxPerKind int     `json:"max_per_kind"`
 }
 type Counts struct {
-	Segments        int `json:"segments"`
-	Duplicates      int `json:"duplicates"`
-	Ranked          int `json:"ranked"`
-	Selected        int `json:"selected"`
-	NeedsReview     int `json:"needs_review"`
-	ModelCalls      int `json:"model_calls"`
-	CacheHits       int `json:"cache_hits"`
-	CacheMisses     int `json:"cache_misses"`
-	ModelErrors     int `json:"model_errors"`
-	ContextExceeded int `json:"context_exceeded"` // segments whose reported input_tokens exceeded state.context_tokens
-	InputTokens     int `json:"input_tokens"`
-	OutputTokens    int `json:"output_tokens"`
+	Segments          int `json:"segments"`
+	Duplicates        int `json:"duplicates"`
+	Ranked            int `json:"ranked"`
+	Selected          int `json:"selected"`
+	NeedsReview       int `json:"needs_review"`
+	ModelCalls        int `json:"model_calls"`
+	ImportanceSkipped int `json:"importance_skipped"` // segments classified "other"; they get no importance request
+	CacheHits         int `json:"cache_hits"`
+	CacheMisses       int `json:"cache_misses"`
+	ModelErrors       int `json:"model_errors"`
+	ContextExceeded   int `json:"context_exceeded"` // segments whose reported input_tokens exceeded state.context_tokens
+	InputTokens       int `json:"input_tokens"`
+	OutputTokens      int `json:"output_tokens"`
 }
 type Timings struct {
 	Segment   int64 `json:"segment"`
@@ -210,7 +211,7 @@ func Run(ctx context.Context, opt Options) (*Result, error) {
 		m.Model = &ModelInfo{Name: cfg.Model, OllamaVersion: ollamaVersion, QuestionSetHash: cfg.QuestionSetHash(), StateFormat: cfg.StateFormat()}
 	}
 	m.Counts = Counts{
-		Segments: len(recs), Selected: len(chosen), ModelCalls: stats.ModelCalls,
+		Segments: len(recs), Selected: len(chosen), ModelCalls: stats.ModelCalls, ImportanceSkipped: stats.ImportanceSkipped,
 		CacheHits: stats.CacheHits, CacheMisses: stats.CacheMisses, ModelErrors: stats.Errors,
 		ContextExceeded: stats.ContextExceeded, InputTokens: stats.InputTokens, OutputTokens: stats.OutputTokens,
 	}
@@ -276,7 +277,6 @@ type TopItem struct {
 // TopModel is a compact view of the model's answers.
 type TopModel struct {
 	PDatapoint float64            `json:"p_datapoint"`
-	PUnknown   float64            `json:"p_unknown"`
 	Importance float64            `json:"importance"`
 	KindProbs  map[string]float64 `json:"kind_probs"`
 	Confidence *float64           `json:"confidence"`
@@ -304,7 +304,7 @@ func BuildTop(m Manifest, recs []Record, chosen []int) TopFile {
 			k := r.Signals.Kind
 			item.Kind = &k
 			item.Model = &TopModel{
-				PDatapoint: round6(r.Signals.PDatapoint), PUnknown: round6(r.Signals.PUnknown),
+				PDatapoint: round6(r.Signals.PDatapoint),
 				Importance: round6(r.Signals.Importance), KindProbs: r.Signals.KindProbs, Confidence: r.Signals.Confidence,
 			}
 		}

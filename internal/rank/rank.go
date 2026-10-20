@@ -18,21 +18,26 @@ import (
 
 // Signals are the model-derived quantities that feed the final score.
 type Signals struct {
-	PDatapoint     float64            `json:"p_datapoint"`     // P(is_datapoint = yes)
-	PUnknown       float64            `json:"p_unknown"`       // P(is_datapoint = unknown); 0 for noul questions
-	Importance     float64            `json:"importance"`      // expected importance on the configured 1..N scale
-	ImportanceNorm float64            `json:"importance_norm"` // importance rescaled to [0,1]
+	// PDatapoint is 1 - P(kind = other): the chance the segment is a datapoint
+	// at all. There is no separate is_datapoint question; "other" is the model
+	// saying "not a datapoint".
+	PDatapoint     float64            `json:"p_datapoint"`
+	Importance     float64            `json:"importance"`      // expected importance on the configured 1..N scale; 0 when not asked (kind = other)
+	ImportanceNorm float64            `json:"importance_norm"` // importance rescaled to [0,1]; 0 when not asked
 	Kind           string             `json:"kind"`            // arg-max kind
 	KindProbs      map[string]float64 `json:"kind_probs"`
 	KindWeight     float64            `json:"kind_weight"`          // probability-weighted per-kind weight
 	KindMargin     float64            `json:"kind_margin"`          // gap between the two most likely kinds
 	Confidence     *float64           `json:"confidence,omitempty"` // lowest model confidence among ranking.review.confidence_questions
-	datapointNoul  bool
 }
 
-// ExtractSignals derives Signals from raw answers. It returns an error only
-// when an answer lacks the information needed (the client already validates
-// the basics).
+// IsDatapoint reports whether the model's chosen kind is anything but "other".
+// This is the same test the pipeline uses to decide whether to ask for importance.
+func (s Signals) IsDatapoint() bool { return s.Kind != config.KindOther }
+
+// ExtractSignals derives Signals from raw answers. The kind answer is required;
+// the importance answer is absent for segments classified as "other", which are
+// not asked for it.
 func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, error) {
 	var s Signals
 	confQ := map[string]bool{}
@@ -47,53 +52,29 @@ func ExtractSignals(cfg config.Config, ans map[string]tev1.Answer) (Signals, err
 		}
 	}
 
-	dq, _ := cfg.Question(config.QIsDatapoint)
-	da, ok := ans[config.QIsDatapoint]
-	if !ok {
-		return s, fmt.Errorf("no answer for %q", config.QIsDatapoint)
-	}
-
-	switch dq.Type {
-	case tev1.TypeNoul:
-		if da.Noul == nil {
-			return s, fmt.Errorf("%q: missing noul probability", config.QIsDatapoint)
-		}
-		s.PDatapoint, s.datapointNoul = *da.Noul, true
-
-	default:
-		if len(da.Probabilities) > 0 {
-			s.PDatapoint, s.PUnknown = da.Probabilities["yes"], da.Probabilities["unknown"]
-		} else if da.Choice == "yes" {
-			s.PDatapoint = 1
-		} else if da.Choice == "unknown" {
-			s.PUnknown = 1
-		}
-	}
-
-	minConf(config.QIsDatapoint, da.Confidence)
-
 	ka, ok := ans[config.QKind]
-	if ok {
-		s.Kind = ka.Choice
-		s.KindProbs = normalise(ka.Probabilities, ka.Choice)
-		top1, top2 := 0.0, 0.0
-		for k, p := range s.KindProbs {
-			w, ok := cfg.Ranking.KindWeights[k]
-			if !ok {
-				w = cfg.Ranking.DefaultKindWeight
-			}
-
-			s.KindWeight += p * w
-			if p > top1 {
-				top1, top2 = p, top1
-			} else if p > top2 {
-				top2 = p
-			}
+	if !ok {
+		return s, fmt.Errorf("no answer for %q", config.QKind)
+	}
+	s.Kind = ka.Choice
+	s.KindProbs = normalise(ka.Probabilities, ka.Choice)
+	top1, top2 := 0.0, 0.0
+	for k, p := range s.KindProbs {
+		w, ok := cfg.Ranking.KindWeights[k]
+		if !ok {
+			w = cfg.Ranking.DefaultKindWeight
 		}
 
-		s.KindMargin = top1 - top2
-		minConf(config.QKind, ka.Confidence)
+		s.KindWeight += p * w
+		if p > top1 {
+			top1, top2 = p, top1
+		} else if p > top2 {
+			top2 = p
+		}
 	}
+	s.KindMargin = top1 - top2
+	s.PDatapoint = clamp01(1 - s.KindProbs[config.KindOther])
+	minConf(config.QKind, ka.Confidence)
 
 	iq, _ := cfg.Question(config.QImportance)
 	ia, ok := ans[config.QImportance]
@@ -167,10 +148,7 @@ func Score(cfg config.RankingConfig, s Signals, bonus float64) float64 {
 // Review lists the reasons a human should look at this segment (empty = fine).
 func Review(cfg config.ReviewConfig, s Signals) []string {
 	var r []string
-	if s.PUnknown >= cfg.UnknownProb && cfg.UnknownProb > 0 {
-		r = append(r, "high_unknown_probability")
-	}
-	if s.datapointNoul && math.Abs(s.PDatapoint-0.5) < 0.1 {
+	if math.Abs(s.PDatapoint-0.5) < 0.1 {
 		r = append(r, "datapoint_uncertain")
 	}
 	if s.KindMargin < cfg.KindMargin {
@@ -242,6 +220,9 @@ type SelectOptions struct {
 	Top        int // 0 = no limit
 	MinScore   float64
 	MaxPerKind int // 0 = no cap; items without a kind are never capped
+	// ExcludeKinds are never selected (default config: "other", the segments
+	// the model decided are not datapoints). Items without a kind are never excluded.
+	ExcludeKinds []string
 }
 
 // Select returns indices of selected items in rank order.
@@ -255,12 +236,19 @@ func Select(items []Item, ranks []int, opt SelectOptions) []int {
 	sort.Slice(order, func(a, b int) bool { return ranks[order[a]] < ranks[order[b]] })
 	var out []int
 	perKind := map[string]int{}
+	excluded := map[string]bool{}
+	for _, k := range opt.ExcludeKinds {
+		excluded[k] = true
+	}
 	for _, i := range order {
 		if opt.Top > 0 && len(out) >= opt.Top {
 			break
 		}
 		if items[i].Score < opt.MinScore {
 			break // sorted by score: nothing later can pass
+		}
+		if k := items[i].Kind; k != "" && excluded[k] {
+			continue
 		}
 		if k := items[i].Kind; opt.MaxPerKind > 0 && k != "" {
 			if perKind[k] >= opt.MaxPerKind {

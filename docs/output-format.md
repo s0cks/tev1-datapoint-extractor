@@ -8,8 +8,10 @@ always `sha256:<hex>`, and offsets are **byte** offsets into the original input 
 they are byte-identical across runs (modulo the `cached` flag in `scored.jsonl`). `run.json` carries
 the timings.
 
-Schema versions: `top.json` is `tev1-rank/top/v1`, `run.json` is `tev1-rank/run/v1`. Breaking
-changes bump the version; stage 2 should check it.
+Schema versions: `top.json` is `tev1-rank/top/v2`, `run.json` is `tev1-rank/run/v1`. Breaking
+changes bump the version; stage 2 should check it. v2 dropped `model.p_unknown` and the
+`high_unknown_probability` review reason (there is no `is_datapoint` question any more) and changed
+the `kind` values to the card-schema block types.
 
 ## `top.json`: what stage 2 consumes
 
@@ -18,7 +20,7 @@ Machine-checkable schema: [`schema/top.schema.json`](../schema/top.schema.json) 
 
 ```jsonc
 {
-  "schema_version": "tev1-rank/top/v1",
+  "schema_version": "tev1-rank/top/v2",
   "mode": "model",                       // or "no-model"
   "source": { "file": "sample.txt", "hash": "sha256:…" },   // base name + hash of the whole input
   "model": "tev1:0.8b",                  // null in no-model mode
@@ -32,31 +34,34 @@ Machine-checkable schema: [`schema/top.schema.json`](../schema/top.schema.json) 
       "hash": "sha256:…",                // hash of `text`
       "start": 1034, "end": 1151,        // byte offsets into the input
       "text": "Revenue grew 14% …",
-      "kind": "stat",                    // null in no-model mode
+      "kind": "stats",                   // never "other" by default; null in no-model mode
       "final_score": 0.8312,             // 0..1
       "needs_review": false,
       "review_reasons": [],              // see below
       "features": { "numbers": 3, "percentages": 1, "currency": 1, "years": 1, "dates": 0,
                     "entities": 0, "length": 117, "words": 19, "position": 0.31, "term_weight": 0.42 },
       "model": {                         // null in no-model mode
-        "p_datapoint": 0.93, "p_unknown": 0.02,
+        "p_datapoint": 0.93,             // 1 - P(kind = other)
         "importance": 4.2,               // expected importance on 1..5
-        "kind_probs": { "stat": 0.81, "claim": 0.03, "…": 0 },
-        "confidence": 0.81               // lowest model confidence among review.confidence_questions (default is_datapoint); null if not reported
+        "kind_probs": { "stats": 0.81, "chart": 0.03, "…": 0 },
+        "confidence": 0.81               // lowest model confidence among review.confidence_questions (default: kind); null if not reported
       }
     }
   ]
 }
 ```
 
-`needs_review` is set when any of these hold (thresholds in `ranking.review`): P(unknown) >=
-`unknown_prob`; the top two `kind` probabilities are within `kind_margin`; or the model confidence of
-the questions in `confidence_questions` is below `min_confidence`. By default only `is_datapoint`
-counts for confidence: `importance` (5-level ordinal) and `kind` (many-way) report inherently low
-confidence and would flag every segment.
+`needs_review` is set when any of these hold (thresholds in `ranking.review`): `p_datapoint` is within
+0.1 of 0.5 (the model is torn between "datapoint" and `other`); the top two `kind` probabilities are
+within `kind_margin`; or the model confidence of the questions in `confidence_questions` is below
+`min_confidence`. By default only `kind` counts for confidence: `importance` (5-level ordinal) reports
+inherently low confidence and would flag every segment.
 
-`review_reasons` values: `high_unknown_probability`, `datapoint_uncertain` (noul questions only),
-`kind_top_two_close`, `low_confidence`, `context_window_exceeded`, `model_error` (that segment fell back to feature scoring).
+`review_reasons` values: `datapoint_uncertain`, `kind_top_two_close`, `low_confidence`,
+`context_window_exceeded`, `model_error` (that segment fell back to feature scoring).
+
+Segments the model classified as `other` are ranked in `scored.jsonl` but never appear in `top.json`
+unless you set `selection.exclude_kinds` to `[]`.
 
 Items are never duplicates: near-identical segments (same text after lower-casing and removing
 punctuation/spacing) are collapsed, keeping the first occurrence.
@@ -68,11 +73,12 @@ punctuation/spacing) are collapsed, keeping the first occurrence.
 | `id`, `start`, `end`, `hash`, `text` | segment identity. `id` = `seg-<ordinal>-<first 8 hex of hash>`. |
 | `features` | as in `top.json` |
 | `scored_by` | `model`, `features` (`--no-model`), or `features_fallback` (the model call for this segment failed) |
-| `answers` | **raw model answers**: `{ "<question>": { "choice" / "noul" / "score", "probabilities", "legend", "confidence" } }`. Omitted unless `scored_by` is `model`. |
-| `signals` | derived values: `p_datapoint`, `p_unknown`, `importance`, `importance_norm`, `kind`, `kind_probs`, `kind_weight`, `kind_margin`, `confidence` |
+| `answers` | **raw model answers**: `{ "kind": {...}, "importance": {...} }`, each with `choice` / `score`, `probabilities`, `legend`, `confidence`. `importance` is absent for `other` segments (never asked). Omitted unless `scored_by` is `model`. |
+| `signals` | derived values: `p_datapoint`, `importance`, `importance_norm`, `kind`, `kind_probs`, `kind_weight`, `kind_margin`, `confidence` |
 | `cached` | answers came from the on-disk cache |
-| `input_tokens`, `output_tokens` | what the server reported for the call that produced the answers (cached hits report the original call's values) |
-| `context_exceeded` | `input_tokens` > `state.context_tokens`; the prompt may have been truncated, so the answers are unreliable |
+| `input_tokens`, `output_tokens` | what the server reported, summed over the segment's requests (one for `other`, two otherwise; cached hits report the original values) |
+| `peak_input_tokens` | the largest single request of the segment |
+| `context_exceeded` | `peak_input_tokens` > `state.context_tokens`; the prompt may have been truncated, so the answers are unreliable |
 | `state_truncated` | segment text exceeded `state.max_text_bytes` and was cut before being sent |
 | `model_error` | error text when `scored_by` is `features_fallback` |
 | `feature_bonus` | 0..1 weighted feature score |
@@ -85,7 +91,7 @@ punctuation/spacing) are collapsed, keeping the first occurrence.
 ### How `final_score` is computed
 
 ```
-final_score = ( w.datapoint  * P(is_datapoint = yes)
+final_score = ( w.datapoint  * (1 - P(kind = other))
               + w.importance * (importance_level / (levels-1))
               + w.kind       * Σ_k P(kind=k) * kind_weights[k]
               + w.features   * feature_bonus ) / (sum of the four weights)
@@ -109,11 +115,11 @@ set to zero, so it sinks rather than floats to the top.
   "input": { "path": "sample.txt", "hash": "sha256:…", "bytes": 4210 },
   "model": { "name": "tev1:0.8b", "ollama_version": "0.35.0",
              "question_set_hash": "sha256:…",
-             "state_format": "state/v1;features=true;max_text_bytes=4000" },   // null in no-model mode
+             "state_format": "state/v3;two-stage;features=true;max_text_bytes=4000;normalize=true" },   // null in no-model mode
   "config": { … },                                // the effective config, including the questions
   "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
   "counts": { "segments": 26, "duplicates": 1, "ranked": 25, "selected": 20, "needs_review": 3,
-              "model_calls": 25, "cache_hits": 1, "cache_misses": 25, "model_errors": 0,
+              "model_calls": 39, "importance_skipped": 13,   // requests sent; segments classified "other" got no importance request "cache_hits": 1, "cache_misses": 25, "model_errors": 0,
               "context_exceeded": 0, "input_tokens": 45075, "output_tokens": 100 },       // summed over model calls, as reported by the server
   "timings_ms": { "segment": 1, "preflight": 12, "classify": 8123, "total": 8140, "model_calls_sum": 8090 },
   "outputs": { "scored": "scored.jsonl", "top": "top.json" }
@@ -142,6 +148,7 @@ wants the cleaned text too, say so and it can be added as an additive field.
 ## Config warnings
 
 At startup (model mode) the tool warns when `kind` options have no `ranking.kind_weights` entry
-(they fall back to `default_kind_weight`, so the kind term cannot separate them) and when
-`kind_weights` has entries that match no option. `kind_weights` are **merged** with the embedded
+(they fall back to `default_kind_weight`, so the kind term cannot separate them), when
+`kind_weights` has entries that match no option, and when the config has questions other than
+`kind` and `importance` (they are never sent). `kind_weights` are **merged** with the embedded
 defaults, so stale default keys linger; they are ignored but reported.

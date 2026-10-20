@@ -1,20 +1,31 @@
-{"text": "By 2019 membership had grown to 412 households, and the shed had become a processing plant employing 85 people year-round.", "is_datapoint": true, "kind": "stat"}
-{"text": "The cooperative began in 1987 with twelve fishing families sharing a single cold-storage shed on the east dock.", "is_datapoint": true, "kind": "timeline_event"}
+{"text": "By 2019 membership had grown to 412 households, and the shed had become a processing plant employing 85 people year-round.", "is_datapoint": true, "kind": "stats"}
+{"text": "The cooperative began in 1987 with twelve fishing families sharing a single cold-storage shed on the east dock.", "is_datapoint": true, "kind": "timeline"}
 {"text": "\"We never planned to be a business,\" said founder Marta Ilves in a 2015 interview.", "is_datapoint": true, "kind": "quote"}
-{"text": "Revenue grew 14% in 2024 to $2.3 billion, up from $2.02 billion the year before, according to the audited accounts.", "is_datapoint": true, "kind": "stat"}
-{"text": "The harbor smells of salt and diesel at dawn, and the gulls gather on the pilings long before the first boats come in.", "is_datapoint": false, "kind": "narrative"}
-{"text": "Cold chain logistics refers to the unbroken series of refrigerated production, storage and distribution activities that keeps perishable goods within a required temperature range.", "is_datapoint": false, "kind": "definition"}
-{"text": "Three things set the cooperative apart: shared ownership of the vessels, a single auction for all landings, and a guaranteed minimum price for members.", "is_datapoint": false, "kind": "list"}
-{"text": "Compared with the regional average of 6%, the cooperative's spoilage rate fell to 1.8% after the new freezer line opened in March 2022.", "is_datapoint": true, "kind": "comparison"}
-{"text": "Some members believe the cooperative should expand into aquaculture, while others argue it should stay focused on wild catch.", "is_datapoint": false, "kind": "claim"}
-{"text": "On October 3, 2023, the board voted 9 to 2 to approve the new wharf lease, a 25-year agreement worth $41 million.", "is_datapoint": true, "kind": "timeline_event"}
-{"text": "Critics say the governance model favors the largest vessel owners, though the bylaws cap any single member at 8% of votes.", "is_datapoint": true, "kind": "claim"}
-{"text": "The annual regatta is held on the second Saturday of August and ends with a fish fry on the pier.", "is_datapoint": false, "kind": "narrative"}
-{"text": "Fuel costs rose 31% between 2021 and 2023, the single largest increase in the cooperative's operating budget.", "is_datapoint": true, "kind": "stat"}
-{"text": "A catch share is a fixed portion of the total allowable catch assigned to a vessel or member for a season.", "is_datapoint": false, "kind": "definition"}
-{"text": "Visitors often remark on the colors of the buildings, painted by schoolchildren every spring.", "is_datapoint": false, "kind": "narrative"}
-{"text": "In 2008 the cooperative lost 40 tonnes of cod when a compressor failed during a heatwave, an event that prompted the redundancy rules still in force today.", "is_datapoint": true, "kind": "timeline_event"}
-{"text": "Members tend to describe the place as a family, with all the arguments that implies.", "is_datapoint": false, "kind": "claim"}
-{"text": "The plant processed 18,600 tonnes of fish in 2024, of which 62% was exported to the European Union.", "is_datapoint": true, "kind": "stat"}
-{"text": "The board expects the new wharf to open before the end of 2026.", "is_datapoint": true, "kind": "timeline_event"}
+{"text": "Revenue grew 14% in 2024 to $2.3 billion, up from $2.02 billion the year before, according to the audited accounts.", "is_datapoint": true, "kind": "stats"}
+{"text": "The harbor smells of salt and diesel at dawn, and the gulls gather on the pilings long before the first boats come in.", "is_datapoint": false, "kind": "other"}
+{"text": "Cold chain logistics refers to the unbroken series of refrigerated production, storage and distribution activities that keeps perishable goods within a required temperature range.", "is_datapoint": false, "kind": "other"}
+{"text": "Three things set the cooperative apart: shared ownership of the vessels, a single auction for all landings, and a guaranteed minimum price for members.", "is_datapoint": false, "kind": "other"}
+{"text": "Compared with the regional average of 6%, the cooperative's spoilage rate fell to 1.8% after the new freezer line opened in March 2022.", "is_datapoint": true, "kind": "chart"}
+{"text": "Some members believe the cooperative should expand into aquaculture, while others argue it should stay focused on wild catch.", "is_datapoint": false, "kind": "other"}
+{"text": "On October 3, 2023, the board voted 9 to 2 to approve the new wharf lease, a 25-year agreement worth $41 million.", "is_datapoint": true, "kind": "timeline"}
+{"text": "Critics say the governance model favors the largest vessel owners, though the bylaws cap any single member at 8% of votes.", "is_datapoint": false, "kind": "other"}
+{"text": "The annual regatta is held on the second Saturday of August and ends with a fish fry on the pier.", "is_datapoint": false, "kind": "other"}
+{"text": "Fuel costs rose 31% between 2021 and 2023, the single largest increase in the cooperative's operating budget.", "is_datapoint": true, "kind": "stats"}
+{"text": "A catch share is a fixed portion of the total allowable catch assigned to a vessel or member for a season.", "is_datapoint": false, "kind": "other"}
+{"text": "Visitors often remark on the colors of the buildings, painted by schoolchildren every spring.", "is_datapoint": false, "kind": "other"}
+{"text": "In 2008 the cooperative lost 40 tonnes of cod when a compressor failed during a heatwave, an event that prompted the redundancy rules still in force today.", "is_datapoint": true, "kind": "timeline"}
+{"text": "Members tend to describe the place as a family, with all the arguments that implies.", "is_datapoint": false, "kind": "other"}
+{"text": "The plant processed 18,600 tonnes of fish in 2024, of which 62% was exported to the European Union.", "is_datapoint": true, "kind": "stats"}
+{"text": "The board expects the new wharf to open before the end of 2026.", "is_datapoint": true, "kind": "timeline"}
 {"text": "Maintenance of the older vessels remains a constant concern for the crew.", "is_datapoint": false, "kind": "other"}
+{"text": "Landings were 9,200 tonnes in 2020, 11,400 in 2021, 14,800 in 2022 and 18,600 in 2024.", "is_datapoint": true, "kind": "chart"}
+{"text": "The 2023 audit found that 14% of landings were never weighed at the dock and concluded that the auction scales had been miscalibrated for two seasons.", "is_datapoint": true, "kind": "findings"}
+{"text": "An independent review concluded that the new freezer line, not the milder winters, accounted for most of the drop in spoilage.", "is_datapoint": true, "kind": "findings"}
+{"text": "The wharf lease was negotiated by the same law firm that advises the cooperative's board, and the harbor authority's chair is a former client of that firm.", "is_datapoint": true, "kind": "threads"}
+{"text": "It remains unclear who authorised the 2021 transfer of vessel quota to the Ilves family trust.", "is_datapoint": true, "kind": "threads"}
+{"text": "Warning: members who miss the March registration deadline forfeit their catch share for the entire season.", "is_datapoint": true, "kind": "callout"}
+{"text": "The single biggest risk to the plan is the cooperative's dependence on one export buyer.", "is_datapoint": true, "kind": "callout"}
+{"text": "Marta Ilves, 71, founded the cooperative and chaired its board until 2016; she previously ran the town's cannery.", "is_datapoint": true, "kind": "profile"}
+{"text": "The Port of Kellvik is a small deepwater harbor on the north coast, home to 30 vessels and the cooperative's processing plant.", "is_datapoint": true, "kind": "profile"}
+{"text": "The figures are taken from the cooperative's audited accounts for 2024, filed with the registrar as document RC-2024-118.", "is_datapoint": true, "kind": "sources"}
+{"text": "It was a long winter, and nobody was in a hurry to leave the dock.", "is_datapoint": false, "kind": "other"}

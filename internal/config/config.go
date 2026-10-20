@@ -21,12 +21,17 @@ var defaultJSON []byte
 // DefaultJSON returns the embedded default configuration (for `--print-config`).
 func DefaultJSON() []byte { return append([]byte(nil), defaultJSON...) }
 
-// Question names with a fixed meaning in the pipeline.
+// Question names with a fixed meaning in the pipeline. Each segment is
+// classified in two separate requests: QKind first, then (only when the kind is
+// not KindOther) QImportance. Any other question in the config is ignored.
 const (
-	QIsDatapoint = "is_datapoint"
-	QKind        = "kind"
-	QImportance  = "importance"
+	QKind       = "kind"
+	QImportance = "importance"
 )
+
+// KindOther is the kind option meaning "not a datapoint". A segment the model
+// classifies as KindOther is not sent on to the importance request.
+const KindOther = "other"
 
 type Config struct {
 	Model          string `json:"model"`
@@ -75,13 +80,12 @@ type Weights struct {
 }
 
 type ReviewConfig struct {
-	UnknownProb   float64 `json:"unknown_prob"`   // flag when P(unknown) >= this
 	KindMargin    float64 `json:"kind_margin"`    // flag when top-two kind probabilities are closer than this
 	MinConfidence float64 `json:"min_confidence"` // flag when model-reported confidence is below this
 	// ConfidenceQuestions lists the questions whose model-reported confidence
-	// counts towards min_confidence. Ordinal/many-way questions (importance,
-	// kind) report inherently low confidence, so by default only is_datapoint is
-	// used; kind uncertainty is covered by kind_margin instead.
+	// counts towards min_confidence. Ordinal questions (importance) report
+	// inherently low confidence and would flag every segment, so by default only
+	// kind is used.
 	ConfidenceQuestions []string `json:"confidence_questions"`
 }
 
@@ -89,11 +93,13 @@ type SelectionConfig struct {
 	Top        int     `json:"top"`
 	MinScore   float64 `json:"min_score"`
 	MaxPerKind int     `json:"max_per_kind"`
+	// ExcludeKinds are never selected. The default excludes "other", i.e. the
+	// segments the model decided are not datapoints.
+	ExcludeKinds []string `json:"exclude_kinds"`
 }
 
 type EvalConfig struct {
-	DatapointThreshold float64 `json:"datapoint_threshold"`
-	K                  []int   `json:"k"`
+	K []int `json:"k"`
 }
 
 // Load returns the embedded defaults, overlaid with the JSON file at path if
@@ -138,7 +144,7 @@ func (c Config) QuestionSet() tev1.QuestionSet {
 	return tev1.QuestionSet(c.Questions)
 }
 
-// Validate checks that the three required questions exist with usable types.
+// Validate checks that the two required questions exist with usable types.
 func (c Config) Validate() error {
 	if c.Model == "" {
 		return fmt.Errorf("config: model is empty")
@@ -156,37 +162,26 @@ func (c Config) Validate() error {
 		}
 		seen[q.Name] = true
 	}
-	dp, ok := c.Question(QIsDatapoint)
-	if !ok {
-		return fmt.Errorf("config: required question %q is missing", QIsDatapoint)
+	k, ok := c.Question(QKind)
+	if !ok || k.Type != tev1.TypeChoice {
+		return fmt.Errorf("config: required question %q must be a choice question", QKind)
 	}
-	switch dp.Type {
-	case tev1.TypeNoul:
-	case tev1.TypeChoice:
-		opts := dp.Options()
-		if !has(opts, "yes") || !has(opts, "no") {
-			return fmt.Errorf("config: choice question %q needs options \"yes\" and \"no\" (optionally \"unknown\")", QIsDatapoint)
+	if opts := k.Options(); len(opts) < 2 || !has(opts, KindOther) {
+		return fmt.Errorf("config: choice question %q needs 2+ options including %q (the \"not a datapoint\" option)", QKind, KindOther)
+	}
+	imp, ok := c.Question(QImportance)
+	if !ok || imp.Type != tev1.TypeScore || imp.Levels() < 2 {
+		return fmt.Errorf("config: required question %q must be a score question with 2+ levels", QImportance)
+	}
+	for _, name := range c.Ranking.Review.ConfidenceQuestions {
+		if _, ok := c.Question(name); !ok {
+			return fmt.Errorf("config: ranking.review.confidence_questions names unknown question %q", name)
 		}
-	default:
-		return fmt.Errorf("config: %q must be type noul or choice, not %q", QIsDatapoint, dp.Type)
 	}
-	// k, ok := c.Question(QKind)
-	// if !ok || k.Type != tev1.TypeChoice || len(k.Options()) < 2 {
-	// 	return fmt.Errorf("config: required question %q must be a choice question with 2+ options", QKind)
-	// }
-	// imp, ok := c.Question(QImportance)
-	// if !ok || imp.Type != tev1.TypeScore || imp.Levels() < 2 {
-	// 	return fmt.Errorf("config: required question %q must be a score question with 2+ levels", QImportance)
-	// }
-	// for _, name := range c.Ranking.Review.ConfidenceQuestions {
-	// 	if _, ok := c.Question(name); !ok {
-	// 		return fmt.Errorf("config: ranking.review.confidence_questions names unknown question %q", name)
-	// 	}
-	// }
-	// w := c.Ranking.Weights
-	// if w.Datapoint < 0 || w.Importance < 0 || w.Kind < 0 || w.Features < 0 || w.Datapoint+w.Importance+w.Kind+w.Features <= 0 {
-	// 	return fmt.Errorf("config: ranking weights must be non-negative and not all zero")
-	// }
+	w := c.Ranking.Weights
+	if w.Datapoint < 0 || w.Importance < 0 || w.Kind < 0 || w.Features < 0 || w.Datapoint+w.Importance+w.Kind+w.Features <= 0 {
+		return fmt.Errorf("config: ranking weights must be non-negative and not all zero")
+	}
 	return nil
 }
 
@@ -202,7 +197,7 @@ func has(ss []string, s string) bool {
 // StateFormat identifies the shape of the state sent to the model. It is part
 // of the question-set hash so that changing it invalidates cached answers.
 func (c Config) StateFormat() string {
-	return fmt.Sprintf("state/v2;features=%t;max_text_bytes=%d;normalize=%t", c.State.IncludeFeatures, c.State.MaxTextBytes, c.State.NormalizeText)
+	return fmt.Sprintf("state/v3;two-stage;features=%t;max_text_bytes=%d;normalize=%t", c.State.IncludeFeatures, c.State.MaxTextBytes, c.State.NormalizeText)
 }
 
 // QuestionSetHash is "sha256:<hex>" over the model name, the ordered questions
@@ -220,6 +215,11 @@ func (c Config) QuestionSetHash() string {
 // Warnings returns non-fatal configuration problems worth showing the user.
 func (c Config) Warnings() []string {
 	var w []string
+	for _, q := range c.Questions {
+		if q.Name != QKind && q.Name != QImportance {
+			w = append(w, fmt.Sprintf("question %q is not used: only %q and %q are sent (in separate requests)", q.Name, QKind, QImportance))
+		}
+	}
 	kq, _ := c.Question(QKind)
 	opts := kq.Options()
 	var missing, stale []string

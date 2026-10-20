@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,15 +30,20 @@ The office was quiet and the coffee was warm that morning.
 Management believes the strategy will pay off over time.
 `
 
-// fakeOllama serves just enough of Ollama for the pipeline. Segments
-// containing a digit look like stats; segments containing FAIL get a 500.
+// fakeOllama serves just enough of Ollama for the pipeline. Segments containing
+// a digit look like stats (kind "stats", then an importance request); all other
+// segments are "other" and must never get an importance request. Segments
+// containing FAIL get a 500. Every request must carry exactly one question.
 type fakeOllama struct {
 	*httptest.Server
-	calls   int32
-	version string
-	models  []string
-	failAll bool
-	tokens  int // input_tokens to report (0 = omit usage)
+	calls      int32 // all /v1/systemone requests
+	kindCalls  int32
+	impCalls   int32
+	version    string
+	models     []string
+	failAll    bool
+	tokens     int // input_tokens to report per request (0 = omit usage)
+	badRequest atomic.Value
 }
 
 func newFake(t *testing.T) *fakeOllama {
@@ -57,24 +63,39 @@ func newFake(t *testing.T) *fakeOllama {
 			var req struct {
 				State struct {
 					Segment string `json:"segment"`
+					Kind    string `json:"kind"`
 				} `json:"state"`
+				Questions map[string]json.RawMessage `json:"questions"`
 			}
 			json.NewDecoder(r.Body).Decode(&req)
 			if f.failAll || strings.Contains(req.State.Segment, "FAIL") {
 				http.Error(w, "boom", http.StatusInternalServerError)
 				return
 			}
-			stat := strings.ContainsAny(req.State.Segment, "0123456789")
-			yes, kind, score := 0.05, "narrative", 0.5
-			if stat {
-				yes, kind, score = 0.92, "stat", 3.6
+			if len(req.Questions) != 1 {
+				f.badRequest.Store("request must carry exactly one question")
 			}
-			resp := map[string]any{"model": "tev1:0.8b", "answers": map[string]any{
-				"is_datapoint": map[string]any{"choice": map[bool]string{true: "yes", false: "no"}[stat],
-					"probabilities": map[string]float64{"yes": yes, "no": 0.93 - yes, "unknown": 0.07}, "confidence": 0.8},
-				"kind":       map[string]any{"choice": kind, "probabilities": map[string]float64{kind: 0.85, "other": 0.15}, "confidence": 0.8},
-				"importance": map[string]any{"score": score, "confidence": 0.7},
-			}}
+			stat := strings.ContainsAny(req.State.Segment, "0123456789")
+			answers := map[string]any{}
+			if _, ok := req.Questions["kind"]; ok {
+				atomic.AddInt32(&f.kindCalls, 1)
+				if req.State.Kind != "" {
+					f.badRequest.Store("the kind request must not carry a kind")
+				}
+				if stat {
+					answers["kind"] = map[string]any{"choice": "stats", "probabilities": map[string]float64{"stats": 0.85, "other": 0.15}, "confidence": 0.8}
+				} else {
+					answers["kind"] = map[string]any{"choice": "other", "probabilities": map[string]float64{"other": 0.9, "stats": 0.1}, "confidence": 0.8}
+				}
+			}
+			if _, ok := req.Questions["importance"]; ok {
+				atomic.AddInt32(&f.impCalls, 1)
+				if req.State.Kind != "stats" || !stat {
+					f.badRequest.Store("importance requested for a non-datapoint, or without its kind")
+				}
+				answers["importance"] = map[string]any{"score": 3.6, "confidence": 0.7}
+			}
+			resp := map[string]any{"model": "tev1:0.8b", "answers": answers}
 			if f.tokens > 0 {
 				resp["usage"] = map[string]int{"input_tokens": f.tokens, "output_tokens": 4}
 			}
@@ -85,6 +106,14 @@ func newFake(t *testing.T) *fakeOllama {
 	}))
 	t.Cleanup(f.Close)
 	return f
+}
+
+// checkFake fails the test if the fake saw a request that breaks the two-request protocol.
+func (f *fakeOllama) check(t *testing.T) {
+	t.Helper()
+	if v := f.badRequest.Load(); v != nil {
+		t.Errorf("fake ollama: %v", v)
+	}
 }
 
 func writeInput(t *testing.T, dir, text string) string {
@@ -140,11 +169,17 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 5 segments, one text appears twice → 4 distinct hashes; the repeat is a cache hit.
-	if got := atomic.LoadInt32(&f.calls); got != 4 {
-		t.Errorf("model calls = %d, want 4", got)
+	// Of the 4, two are stats (kind + importance = 2 requests each) and two are
+	// "other" (kind only = 1 request each): 6 requests, 2 importance requests skipped.
+	if got := atomic.LoadInt32(&f.calls); got != 6 {
+		t.Errorf("model calls = %d, want 6", got)
 	}
+	if k, i := atomic.LoadInt32(&f.kindCalls), atomic.LoadInt32(&f.impCalls); k != 4 || i != 2 {
+		t.Errorf("kind requests = %d (want 4), importance requests = %d (want 2)", k, i)
+	}
+	f.check(t)
 	c := res.Manifest.Counts
-	if c.Segments != 5 || c.Duplicates != 1 || c.Ranked != 4 || c.Selected != 3 || c.CacheHits != 1 || c.ModelCalls != 4 {
+	if c.Segments != 5 || c.Duplicates != 1 || c.Ranked != 4 || c.Selected != 3 || c.CacheHits != 1 || c.ModelCalls != 6 || c.ImportanceSkipped != 2 {
 		t.Errorf("counts = %+v", c)
 	}
 	if res.Manifest.Mode != "model" || res.Manifest.Model == nil || res.Manifest.Model.OllamaVersion != "0.35.2" ||
@@ -163,8 +198,17 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 			t.Errorf("bad record: %v", r)
 		}
 	}
-	if recs[0]["rank"].(float64) != 1 || recs[1]["rank"].(float64) <= recs[2]["rank"].(float64) {
-		t.Errorf("expected stat segments to outrank prose: ranks %v %v %v", recs[0]["rank"], recs[1]["rank"], recs[2]["rank"])
+	// recs[0] and recs[2] are stats, recs[1] is prose ("other"): both stats must outrank it,
+	// whatever the feature weights say about their order.
+	if r0, r1, r2 := recs[0]["rank"].(float64), recs[1]["rank"].(float64), recs[2]["rank"].(float64); r1 <= r0 || r1 <= r2 {
+		t.Errorf("expected stat segments to outrank prose: ranks %v %v %v", r0, r1, r2)
+	}
+	// "other" segments carry only the kind answer; datapoints carry both.
+	if ans := recs[1]["answers"].(map[string]any); ans["kind"] == nil || ans["importance"] != nil {
+		t.Errorf("other segment answers = %v", ans)
+	}
+	if ans := recs[0]["answers"].(map[string]any); ans["kind"] == nil || ans["importance"] == nil {
+		t.Errorf("datapoint answers = %v", ans)
 	}
 	if recs[3]["rank"] != nil || recs[3]["duplicate_of"] != recs[1]["id"] {
 		t.Errorf("duplicate not flagged: %v", recs[3])
@@ -175,7 +219,7 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 	if err := json.Unmarshal(b, &top); err != nil {
 		t.Fatal(err)
 	}
-	if top.SchemaVersion != TopSchemaVersion || top.Count != 3 || len(top.Items) != 3 || top.Items[0].Rank != 1 || top.Items[0].Model == nil || *top.Items[0].Kind != "stat" {
+	if top.SchemaVersion != TopSchemaVersion || top.Count != 3 || len(top.Items) != 3 || top.Items[0].Rank != 1 || top.Items[0].Model == nil || *top.Items[0].Kind != "stats" {
 		t.Errorf("top.json = %+v", top)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "out", "run.json")); err != nil {
@@ -196,14 +240,14 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 		t.Error("top.json should be byte-identical across cached reruns")
 	}
 
-	// Edit one paragraph: only that segment hits the model.
+	// Edit one stats paragraph: only that segment hits the model (kind + importance).
 	atomic.StoreInt32(&f.calls, 0)
 	in2 := writeInput(t, dir, strings.Replace(sampleDoc, "Ohio", "Texas", 1))
 	if _, err := Run(context.Background(), opts(t, f, dir, in2)); err != nil {
 		t.Fatal(err)
 	}
-	if atomic.LoadInt32(&f.calls) != 1 {
-		t.Errorf("after one edit, model calls = %d, want 1", f.calls)
+	if atomic.LoadInt32(&f.calls) != 2 {
+		t.Errorf("after one edit, model calls = %d, want 2", f.calls)
 	}
 
 	// --no-cache bypasses the cache.
@@ -213,8 +257,9 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 	if _, err := Run(context.Background(), o); err != nil {
 		t.Fatal(err)
 	}
-	if atomic.LoadInt32(&f.calls) != 5 {
-		t.Errorf("--no-cache calls = %d, want 5", f.calls)
+	// 5 segments (the repeat is no longer a cache hit): 2 stats x 2 requests + 3 other x 1 request.
+	if atomic.LoadInt32(&f.calls) != 7 {
+		t.Errorf("--no-cache calls = %d, want 7", f.calls)
 	}
 
 	// Changing the model invalidates the cache.
@@ -225,8 +270,88 @@ func TestRunEndToEndAndCaching(t *testing.T) {
 	if _, err := Run(context.Background(), o); err != nil {
 		t.Fatal(err)
 	}
-	if atomic.LoadInt32(&f.calls) != 4 {
-		t.Errorf("new model calls = %d, want 4", f.calls)
+	if atomic.LoadInt32(&f.calls) != 6 {
+		t.Errorf("new model calls = %d, want 6", f.calls)
+	}
+	f.check(t)
+}
+
+// Segments the model classifies as "other" are cached too (kind answer only), so
+// a rerun does not ask about them again, and they are not selected.
+func TestOtherIsCachedAndNotSelected(t *testing.T) {
+	f := newFake(t)
+	dir := t.TempDir()
+	in := writeInput(t, dir, sampleDoc)
+	o := opts(t, f, dir, in)
+	o.Select = rank.SelectOptions{Top: 10, ExcludeKinds: []string{"other"}}
+	res, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Manifest.Counts.Selected != 2 {
+		t.Errorf("selected = %d, want only the 2 stats segments", res.Manifest.Counts.Selected)
+	}
+	for _, i := range res.Selected {
+		if res.Records[i].Kind() == "other" {
+			t.Errorf("other segment selected: %q", res.Records[i].Text)
+		}
+	}
+	atomic.StoreInt32(&f.calls, 0)
+	res2, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.calls != 0 || res2.Manifest.Counts.CacheHits != 5 {
+		t.Errorf("rerun: calls=%d hits=%d (other segments must be cached)", f.calls, res2.Manifest.Counts.CacheHits)
+	}
+	// No exclusion: the other segments are ranked below the stats ones.
+	o.Select = rank.SelectOptions{Top: 10}
+	res3, _ := Run(context.Background(), o)
+	if res3.Manifest.Counts.Selected != 4 {
+		t.Errorf("without exclude_kinds selected = %d, want 4", res3.Manifest.Counts.Selected)
+	}
+}
+
+// A failure of the second request falls back for that segment (kind alone is
+// not cached as if it were complete).
+func TestImportanceRequestFailureFallsBack(t *testing.T) {
+	var kindOnly int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Questions map[string]json.RawMessage `json:"questions"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		if _, ok := req.Questions["importance"]; ok {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		atomic.AddInt32(&kindOnly, 1)
+		json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{
+			"kind": map[string]any{"choice": "stats", "probabilities": map[string]float64{"stats": 1}}}})
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	o := opts(t, nil, dir, writeInput(t, dir, "Revenue grew 14% in 2024.\n"))
+	o.Config.OllamaURL = srv.URL
+	o.Client = &tev1.Client{BaseURL: srv.URL, Timeout: 5 * time.Second}
+	o.SkipPreflight = true
+	res, err := Run(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ModelErrors != 1 {
+		t.Fatalf("model errors = %d", res.ModelErrors)
+	}
+	if r := readRecords(t, dir)[0]; r["scored_by"] != "features_fallback" || r["needs_review"] != true {
+		t.Errorf("record = %v", r)
+	}
+	// Rerun: nothing was cached from the half-finished segment.
+	before := atomic.LoadInt32(&kindOnly)
+	if _, err := Run(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if atomic.LoadInt32(&kindOnly) == before {
+		t.Error("a segment with only its kind answer must not be served from the cache")
 	}
 }
 
@@ -256,8 +381,8 @@ func TestRunNoModel(t *testing.T) {
 	if top.Mode != "no-model" || top.Model != nil || top.Items[0].Model != nil || top.Items[0].Kind != nil {
 		t.Errorf("top.json must mark the absence of the model: %+v", top)
 	}
-	// The revenue sentence is the most data-rich and must rank first.
-	if !strings.HasPrefix(top.Items[0].Text, "Revenue grew") {
+	// A data-rich sentence (not the prose) must rank first; which of the two depends on feature_weights.
+	if !strings.ContainsAny(top.Items[0].Text, "0123456789") {
 		t.Errorf("top item = %q", top.Items[0].Text)
 	}
 }
@@ -379,13 +504,23 @@ func TestStateIsNormalisedButRecordIsVerbatim(t *testing.T) {
 			var req struct {
 				State struct{ Segment, Features string } `json:"state"`
 			}
-			json.NewDecoder(r.Body).Decode(&req)
-			got.Seg, got.Feat = req.State.Segment, req.State.Features
-			json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{
-				"is_datapoint": map[string]any{"choice": "yes", "probabilities": map[string]float64{"yes": 1}},
-				"kind":         map[string]any{"choice": "stat", "probabilities": map[string]float64{"stat": 1}},
-				"importance":   map[string]any{"score": 2.0},
-			}})
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &req)
+			if got.Seg == "" { // the kind request is the first one
+				got.Seg, got.Feat = req.State.Segment, req.State.Features
+			}
+			var q struct {
+				Questions map[string]json.RawMessage `json:"questions"`
+			}
+			json.Unmarshal(body, &q)
+			answers := map[string]any{}
+			if _, ok := q.Questions["kind"]; ok {
+				answers["kind"] = map[string]any{"choice": "stats", "probabilities": map[string]float64{"stats": 1}}
+			}
+			if _, ok := q.Questions["importance"]; ok {
+				answers["importance"] = map[string]any{"score": 2.0}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"answers": answers})
 		}
 	}))
 	defer srv.Close()
@@ -423,11 +558,17 @@ func TestContextExceededIsRecordedFlaggedAndCached(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Manifest.Counts.ContextExceeded == 0 || res.Manifest.Counts.InputTokens < 2166*4 {
+	// 6 requests of 2166 tokens each in total.
+	if res.Manifest.Counts.ContextExceeded == 0 || res.Manifest.Counts.InputTokens != 2166*6 {
 		t.Errorf("counts = %+v", res.Manifest.Counts)
 	}
 	for _, r := range readRecords(t, dir) {
-		if r["context_exceeded"] != true || r["input_tokens"].(float64) != 2166 || r["needs_review"] != true {
+		// input_tokens sums the requests of a segment; the window check uses the largest single one.
+		wantTotal := 2166.0 * 2 // stats: kind + importance
+		if _, hasImp := r["answers"].(map[string]any)["importance"]; !hasImp {
+			wantTotal = 2166
+		}
+		if r["context_exceeded"] != true || r["input_tokens"].(float64) != wantTotal || r["peak_input_tokens"].(float64) != 2166 || r["needs_review"] != true {
 			t.Errorf("record not flagged: %v", r)
 		}
 		if !strings.Contains(strings.Join(toStrings(r["review_reasons"]), ","), "context_window_exceeded") {

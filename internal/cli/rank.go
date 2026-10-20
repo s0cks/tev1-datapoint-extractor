@@ -34,7 +34,7 @@ With --no-model, ranking uses deterministic features only and the outputs say so
 				return err
 			}
 			fl := cmd.Flags()
-			sel := rank.SelectOptions{Top: cfg.Selection.Top, MinScore: cfg.Selection.MinScore, MaxPerKind: cfg.Selection.MaxPerKind}
+			sel := rank.SelectOptions{Top: cfg.Selection.Top, MinScore: cfg.Selection.MinScore, MaxPerKind: cfg.Selection.MaxPerKind, ExcludeKinds: cfg.Selection.ExcludeKinds}
 			if fl.Changed("top") {
 				sel.Top = top
 			}

@@ -21,17 +21,19 @@ func mustCfg(t *testing.T) config.Config {
 	return c
 }
 
-func answers(pyes, punk float64, kind string, kp map[string]float64, score float64, conf float64) map[string]tev1.Answer {
-	return map[string]tev1.Answer{
-		"is_datapoint": {Choice: "yes", Probabilities: map[string]float64{"yes": pyes, "no": 1 - pyes - punk, "unknown": punk}, Confidence: f(conf)},
-		"kind":         {Choice: kind, Probabilities: kp, Confidence: f(conf)},
-		"importance":   {Score: f(score), Confidence: f(conf)},
+// answers builds the merged answers of the two requests. A nil score means the
+// importance request was skipped (kind = other).
+func answers(kind string, kp map[string]float64, kindConf float64, score *float64, impConf float64) map[string]tev1.Answer {
+	a := map[string]tev1.Answer{"kind": {Choice: kind, Probabilities: kp, Confidence: f(kindConf)}}
+	if score != nil {
+		a["importance"] = tev1.Answer{Score: score, Confidence: f(impConf)}
 	}
+	return a
 }
 
 func TestExtractSignals(t *testing.T) {
 	cfg := mustCfg(t)
-	s, err := ExtractSignals(cfg, answers(0.9, 0.05, "stat", map[string]float64{"stat": 0.8, "claim": 0.2}, 3, 0.8))
+	s, err := ExtractSignals(cfg, answers("stats", map[string]float64{"stats": 0.8, "chart": 0.1, "other": 0.1}, 0.8, f(3), 0.5))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,50 +42,48 @@ func TestExtractSignals(t *testing.T) {
 			t.Errorf("%s = %v, want %v", name, got, want)
 		}
 	}
-	near("p_datapoint", s.PDatapoint, 0.9)
-	near("p_unknown", s.PUnknown, 0.05)
-	near("importance", s.Importance, 4) // score 3 on a 0-based scale → 4 on 1..5
+	near("p_datapoint", s.PDatapoint, 0.9) // 1 - P(other)
+	near("importance", s.Importance, 4)    // score 3 on a 0-based scale → 4 on 1..5
 	near("importance_norm", s.ImportanceNorm, 0.75)
-	near("kind_weight", s.KindWeight, 0.8*1.0+0.2*0.6)
-	near("kind_margin", s.KindMargin, 0.6)
-	if s.Kind != "stat" || s.Confidence == nil || *s.Confidence != 0.8 {
+	near("kind_weight", s.KindWeight, 0.8*1.0+0.1*0.9+0.1*0.0)
+	near("kind_margin", s.KindMargin, 0.7)
+	if s.Kind != "stats" || !s.IsDatapoint() || s.Confidence == nil || *s.Confidence != 0.8 {
 		t.Errorf("unexpected signals: %+v", s)
 	}
 
-	t.Run("noul datapoint", func(t *testing.T) {
-		c := mustCfg(t)
-		c.Questions[0] = tev1.NamedQuestion{Name: "is_datapoint", Type: tev1.TypeNoul, Instructions: "x"}
-		a := answers(0, 0, "stat", nil, 4, 0.9)
-		a["is_datapoint"] = tev1.Answer{Noul: f(0.45)}
-		s, err := ExtractSignals(c, a)
-		if err != nil || s.PDatapoint != 0.45 || s.PUnknown != 0 {
-			t.Fatalf("%+v %v", s, err)
+	t.Run("other is not a datapoint and has no importance", func(t *testing.T) {
+		s, err := ExtractSignals(cfg, answers("other", map[string]float64{"other": 0.7, "stats": 0.3}, 0.7, nil, 0))
+		if err != nil {
+			t.Fatal(err)
 		}
-		if r := Review(c.Ranking.Review, s); !reflect.DeepEqual(r, []string{"datapoint_uncertain"}) {
-			t.Errorf("review = %v", r)
+		near("p_datapoint", s.PDatapoint, 0.3)
+		if s.IsDatapoint() || s.Importance != 0 || s.ImportanceNorm != 0 {
+			t.Errorf("%+v", s)
 		}
 	})
 	t.Run("no probabilities falls back to one-hot", func(t *testing.T) {
-		a := answers(0, 0, "quote", nil, 0, 0.9)
-		a["is_datapoint"] = tev1.Answer{Choice: "yes"}
-		s, err := ExtractSignals(cfg, a)
+		s, err := ExtractSignals(cfg, answers("quote", nil, 0.9, f(0), 0.9))
 		if err != nil || s.PDatapoint != 1 || s.KindProbs["quote"] != 1 || s.KindMargin != 1 {
 			t.Fatalf("%+v %v", s, err)
 		}
+		s, _ = ExtractSignals(cfg, answers("other", nil, 0.9, nil, 0))
+		if s.PDatapoint != 0 {
+			t.Errorf("one-hot other: p_datapoint = %v", s.PDatapoint)
+		}
 	})
 	t.Run("unnormalised probabilities are rescaled", func(t *testing.T) {
-		s, _ := ExtractSignals(cfg, answers(0.5, 0, "stat", map[string]float64{"stat": 0.3, "claim": 0.3}, 1, 0.9))
-		if math.Abs(s.KindProbs["stat"]-0.5) > 1e-9 {
+		s, _ := ExtractSignals(cfg, answers("stats", map[string]float64{"stats": 0.3, "chart": 0.3}, 0.9, f(1), 0.9))
+		if math.Abs(s.KindProbs["stats"]-0.5) > 1e-9 {
 			t.Errorf("kind probs = %v", s.KindProbs)
 		}
 	})
 	t.Run("unknown kind uses default weight", func(t *testing.T) {
-		s, _ := ExtractSignals(cfg, answers(0.5, 0, "mystery", map[string]float64{"mystery": 1}, 1, 0.9))
+		s, _ := ExtractSignals(cfg, answers("mystery", map[string]float64{"mystery": 1}, 0.9, f(1), 0.9))
 		if s.KindWeight != cfg.Ranking.DefaultKindWeight {
 			t.Errorf("kind weight = %v", s.KindWeight)
 		}
 	})
-	t.Run("missing answers", func(t *testing.T) {
+	t.Run("missing kind answer", func(t *testing.T) {
 		if _, err := ExtractSignals(cfg, map[string]tev1.Answer{}); err == nil {
 			t.Error("expected error")
 		}
@@ -91,19 +91,19 @@ func TestExtractSignals(t *testing.T) {
 }
 
 func TestReview(t *testing.T) {
-	cfg := mustCfg(t).Ranking.Review // unknown 0.25, margin 0.15, confidence 0.30
+	cfg := config.ReviewConfig{KindMargin: 0.15, MinConfidence: 0.3}
 	tests := []struct {
 		name string
 		s    Signals
 		want []string
 	}{
-		{"confident", Signals{PUnknown: 0.02, KindMargin: 0.6, Confidence: f(0.8)}, nil},
-		{"high unknown", Signals{PUnknown: 0.4, KindMargin: 0.6, Confidence: f(0.8)}, []string{"high_unknown_probability"}},
-		{"unknown exactly at threshold", Signals{PUnknown: 0.25, KindMargin: 0.6}, []string{"high_unknown_probability"}},
-		{"kind close", Signals{KindMargin: 0.05, Confidence: f(0.8)}, []string{"kind_top_two_close"}},
-		{"low confidence", Signals{KindMargin: 0.6, Confidence: f(0.1)}, []string{"low_confidence"}},
-		{"no confidence reported", Signals{KindMargin: 0.6}, nil},
-		{"everything", Signals{PUnknown: 0.9, KindMargin: 0, Confidence: f(0.01)}, []string{"high_unknown_probability", "kind_top_two_close", "low_confidence"}},
+		{"confident", Signals{PDatapoint: 0.95, KindMargin: 0.6, Confidence: f(0.8)}, nil},
+		{"datapoint coin flip", Signals{PDatapoint: 0.5, KindMargin: 0.6, Confidence: f(0.8)}, []string{"datapoint_uncertain"}},
+		{"datapoint just outside the band", Signals{PDatapoint: 0.61, KindMargin: 0.6}, nil},
+		{"kind close", Signals{PDatapoint: 0.95, KindMargin: 0.05, Confidence: f(0.8)}, []string{"kind_top_two_close"}},
+		{"low confidence", Signals{PDatapoint: 0.95, KindMargin: 0.6, Confidence: f(0.1)}, []string{"low_confidence"}},
+		{"no confidence reported", Signals{PDatapoint: 0.95, KindMargin: 0.6}, nil},
+		{"everything", Signals{PDatapoint: 0.5, KindMargin: 0, Confidence: f(0.01)}, []string{"datapoint_uncertain", "kind_top_two_close", "low_confidence"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,9 +148,11 @@ func TestScore(t *testing.T) {
 	if s := Score(cfg, worst, 0); s != 0 {
 		t.Errorf("worst = %v", s)
 	}
+	w := cfg.Weights
 	mid := Signals{PDatapoint: 1} // only the datapoint term contributes
-	if s := Score(cfg, mid, 0); math.Abs(s-0.40) > 1e-9 {
-		t.Errorf("datapoint-only = %v, want 0.40", s)
+	want := w.Datapoint / (w.Datapoint + w.Importance + w.Kind + w.Features)
+	if s := Score(cfg, mid, 0); math.Abs(s-want) > 1e-9 {
+		t.Errorf("datapoint-only = %v, want %v", s, want)
 	}
 	// Weights live in config: zeroing everything but features makes bonus the score.
 	only := cfg
@@ -176,12 +178,12 @@ func TestNormalizedHash(t *testing.T) {
 
 func TestRankAndSelect(t *testing.T) {
 	items := []Item{
-		{NormHash: "a", Score: 0.5, Kind: "stat"},      // 0
-		{NormHash: "b", Score: 0.9, Kind: "stat"},      // 1
-		{NormHash: "a", Score: 0.5, Kind: "stat"},      // 2 duplicate of 0
-		{NormHash: "c", Score: 0.9, Kind: "stat"},      // 3 ties with 1 → document order
-		{NormHash: "d", Score: 0.7, Kind: "narrative"}, // 4
-		{NormHash: "e", Score: 0.1, Kind: "other"},     // 5
+		{NormHash: "a", Score: 0.5, Kind: "stats"},    // 0
+		{NormHash: "b", Score: 0.9, Kind: "stats"},    // 1
+		{NormHash: "a", Score: 0.5, Kind: "stats"},    // 2 duplicate of 0
+		{NormHash: "c", Score: 0.9, Kind: "stats"},    // 3 ties with 1 → document order
+		{NormHash: "d", Score: 0.7, Kind: "timeline"}, // 4
+		{NormHash: "e", Score: 0.1, Kind: "other"},    // 5
 	}
 	ranks, dup := Rank(items)
 	if want := []int{4, 1, 0, 2, 3, 5}; !reflect.DeepEqual(ranks, want) {
@@ -199,6 +201,8 @@ func TestRankAndSelect(t *testing.T) {
 		{"top 2", SelectOptions{Top: 2}, []int{1, 3}},
 		{"min score", SelectOptions{MinScore: 0.6}, []int{1, 3, 4}},
 		{"max per kind skips and continues", SelectOptions{Top: 3, MaxPerKind: 1}, []int{1, 4, 5}},
+		{"exclude other", SelectOptions{ExcludeKinds: []string{"other"}}, []int{1, 3, 4, 0}},
+		{"excluded kinds do not use up top", SelectOptions{Top: 5, ExcludeKinds: []string{"stats"}}, []int{4, 5}},
 		{"top larger than available", SelectOptions{Top: 99}, []int{1, 3, 4, 0, 5}},
 		{"min score above all", SelectOptions{MinScore: 2}, nil},
 	}
@@ -209,10 +213,10 @@ func TestRankAndSelect(t *testing.T) {
 			}
 		})
 	}
-	t.Run("unclassified items are not capped", func(t *testing.T) {
+	t.Run("unclassified items are not capped or excluded", func(t *testing.T) {
 		its := []Item{{NormHash: "x", Score: 0.9}, {NormHash: "y", Score: 0.8}, {NormHash: "z", Score: 0.7}}
 		r, _ := Rank(its)
-		if got := Select(its, r, SelectOptions{MaxPerKind: 1}); len(got) != 3 {
+		if got := Select(its, r, SelectOptions{MaxPerKind: 1, ExcludeKinds: []string{"other"}}); len(got) != 3 {
 			t.Errorf("got %v", got)
 		}
 	})
@@ -224,24 +228,23 @@ func TestRankAndSelect(t *testing.T) {
 	})
 }
 
-// Regression: importance/kind confidences are inherently low (flat ordinal and
-// many-way distributions). They used to flag every segment as low_confidence.
+// Regression: importance confidence is inherently low (flat ordinal distribution)
+// and used to flag every segment as low_confidence.
 func TestReviewIgnoresLowConfidenceOfOrdinalQuestions(t *testing.T) {
 	cfg := mustCfg(t)
-	a := answers(0.9, 0.02, "stat", map[string]float64{"stat": 0.9, "claim": 0.1}, 3, 0.1)
-	a["is_datapoint"] = tev1.Answer{Choice: "yes", Probabilities: map[string]float64{"yes": 0.9, "no": 0.08, "unknown": 0.02}, Confidence: f(0.9)}
+	a := answers("stats", map[string]float64{"stats": 0.9, "chart": 0.1}, 0.9, f(3), 0.1)
 	s, err := ExtractSignals(cfg, a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.Confidence == nil || *s.Confidence != 0.9 {
-		t.Fatalf("confidence = %v, want 0.9 (is_datapoint only)", s.Confidence)
+		t.Fatalf("confidence = %v, want 0.9 (kind only)", s.Confidence)
 	}
 	if r := Review(cfg.Ranking.Review, s); len(r) != 0 {
 		t.Errorf("review = %v, want none", r)
 	}
-	// Opting everything back in restores the old behaviour.
-	cfg.Ranking.Review.ConfidenceQuestions = []string{"is_datapoint", "kind", "importance"}
+	// Opting importance in restores the old behaviour.
+	cfg.Ranking.Review.ConfidenceQuestions = []string{"kind", "importance"}
 	s, _ = ExtractSignals(cfg, a)
 	if s.Confidence == nil || *s.Confidence != 0.1 {
 		t.Fatalf("confidence = %v, want 0.1", s.Confidence)
@@ -249,11 +252,11 @@ func TestReviewIgnoresLowConfidenceOfOrdinalQuestions(t *testing.T) {
 	if r := Review(cfg.Ranking.Review, s); len(r) != 1 || r[0] != "low_confidence" {
 		t.Errorf("review = %v", r)
 	}
-	// An uncertain is_datapoint is still caught.
+	// A diffuse kind answer (stats vs other) is still caught, by two flags.
 	cfg = mustCfg(t)
-	a["is_datapoint"] = tev1.Answer{Choice: "yes", Probabilities: map[string]float64{"yes": 0.4, "no": 0.35, "unknown": 0.25}, Confidence: f(0.1)}
+	a = answers("stats", map[string]float64{"stats": 0.43, "other": 0.45, "chart": 0.12}, 0.1, f(3), 0.9)
 	s, _ = ExtractSignals(cfg, a)
-	if r := Review(cfg.Ranking.Review, s); len(r) != 2 {
-		t.Errorf("review = %v, want high_unknown_probability + low_confidence", r)
+	if r := Review(cfg.Ranking.Review, s); len(r) != 3 {
+		t.Errorf("review = %v, want datapoint_uncertain + kind_top_two_close + low_confidence", r)
 	}
 }

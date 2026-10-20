@@ -217,9 +217,14 @@ func (a Answer) MarshalJSON() ([]byte, error) {
 }
 
 // Usage is the token accounting the server reports ("usage" in the response).
+//
+// PeakInputTokens is never sent by the server: when a segment needs several
+// requests, the pipeline sums the tokens and records here the largest single
+// request, which is what has to fit in the context window.
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens     int `json:"input_tokens"`
+	OutputTokens    int `json:"output_tokens"`
+	PeakInputTokens int `json:"peak_input_tokens,omitempty"`
 }
 
 // Response is a decoded and validated /v1/systemone response.

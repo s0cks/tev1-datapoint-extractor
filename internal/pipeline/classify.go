@@ -4,7 +4,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -51,11 +50,14 @@ type Record struct {
 	Signals        *rank.Signals          `json:"signals,omitempty"`
 	Cached         bool                   `json:"cached"`
 	StateTruncated bool                   `json:"state_truncated,omitempty"`
-	// InputTokens/OutputTokens are what the server reported for the call that
-	// produced these answers (kept in the cache, so cached hits report them too).
-	InputTokens  int `json:"input_tokens,omitempty"`
-	OutputTokens int `json:"output_tokens,omitempty"`
-	// ContextExceeded: InputTokens is above state.context_tokens, so the prompt
+	// InputTokens/OutputTokens are what the server reported, summed over the
+	// requests that produced these answers (one for "other", two otherwise; kept
+	// in the cache, so cached hits report them too). PeakInputTokens is the
+	// largest single request, which is what has to fit in the context window.
+	InputTokens     int `json:"input_tokens,omitempty"`
+	OutputTokens    int `json:"output_tokens,omitempty"`
+	PeakInputTokens int `json:"peak_input_tokens,omitempty"`
+	// ContextExceeded: PeakInputTokens is above state.context_tokens, so the prompt
 	// may have been truncated by the server and the answers are unreliable.
 	ContextExceeded bool   `json:"context_exceeded,omitempty"`
 	ModelError      string `json:"model_error,omitempty"`
@@ -81,14 +83,17 @@ func (r Record) Kind() string {
 
 // Stats are counters collected while classifying.
 type Stats struct {
-	ModelCalls      int           `json:"model_calls"`
-	CacheHits       int           `json:"cache_hits"`
-	CacheMisses     int           `json:"cache_misses"`
-	Errors          int           `json:"errors"`
-	ContextExceeded int           `json:"context_exceeded"`
-	InputTokens     int           `json:"input_tokens"` // summed over model calls (as reported by the server)
-	OutputTokens    int           `json:"output_tokens"`
-	ModelTime       time.Duration `json:"-"`
+	ModelCalls int `json:"model_calls"` // requests sent: 1 per "other" segment, 2 per datapoint
+	// ImportanceSkipped counts segments classified as "other", which never get
+	// the importance request.
+	ImportanceSkipped int           `json:"importance_skipped"`
+	CacheHits         int           `json:"cache_hits"`
+	CacheMisses       int           `json:"cache_misses"`
+	Errors            int           `json:"errors"`
+	ContextExceeded   int           `json:"context_exceeded"`
+	InputTokens       int           `json:"input_tokens"` // summed over model calls (as reported by the server)
+	OutputTokens      int           `json:"output_tokens"`
+	ModelTime         time.Duration `json:"-"`
 }
 
 // Classifier classifies segments with tev1, using the cache when enabled.
@@ -129,11 +134,15 @@ func (cl *Classifier) add(f func(*Stats)) {
 type state struct {
 	Segment  string `json:"segment"`
 	Features string `json:"features,omitempty"`
+	// Kind is the result of the first request; it is only present in the state
+	// of the importance request.
+	Kind string `json:"kind,omitempty"`
 }
 
 // buildState renders the model input. Text beyond MaxTextBytes is cut on a
-// rune boundary because tev1 only has a ~2k-token context.
-func (cl *Classifier) buildState(text string, f features.Features) (any, bool) {
+// rune boundary because tev1 only has a ~2k-token context. kind is empty for the
+// classification request and the chosen kind for the importance request.
+func (cl *Classifier) buildState(text string, f features.Features, kind string) (any, bool) {
 	truncated := false
 	if cl.Cfg.State.NormalizeText {
 		text = segment.NormalizeText(text)
@@ -145,10 +154,14 @@ func (cl *Classifier) buildState(text string, f features.Features) (any, bool) {
 		}
 		text, truncated = text[:cut], true
 	}
-	if !cl.Cfg.State.IncludeFeatures {
+	st := state{Segment: text, Kind: kind}
+	if cl.Cfg.State.IncludeFeatures {
+		st.Features = f.Summary()
+	}
+	if kind == "" && !cl.Cfg.State.IncludeFeatures {
 		return text, truncated
 	}
-	return state{Segment: text, Features: f.Summary()}, truncated
+	return st, truncated
 }
 
 func round6(x float64) float64 { return math.Round(x*1e6) / 1e6 }
@@ -216,8 +229,8 @@ func (cl *Classifier) BuildRecords(ctx context.Context, segs []segment.Segment, 
 				rec.ScoredBy = ScoredByModel
 				rec.FinalScore = round6(rank.Score(cfg.Ranking, sig, rec.FeatureBonus))
 				rec.ReviewReasons = rank.Review(cfg.Ranking.Review, sig)
-				rec.InputTokens, rec.OutputTokens = usage.InputTokens, usage.OutputTokens
-				if ctxTok := cfg.State.ContextTokens; ctxTok > 0 && usage.InputTokens > ctxTok {
+				rec.InputTokens, rec.OutputTokens, rec.PeakInputTokens = usage.InputTokens, usage.OutputTokens, usage.PeakInputTokens
+				if ctxTok := cfg.State.ContextTokens; ctxTok > 0 && usage.PeakInputTokens > ctxTok {
 					rec.ContextExceeded = true
 					rec.ReviewReasons = append(rec.ReviewReasons, "context_window_exceeded")
 					cl.add(func(s *Stats) { s.ContextExceeded++ })
@@ -249,8 +262,16 @@ loop:
 	return recs, nil
 }
 
+// classifyOne asks tev1 about one segment in up to two separate requests, which
+// keeps each prompt far smaller than a single request carrying every question:
+//
+//  1. kind: which block type the segment is, or "other". "other" means the model
+//     decided it is not a datapoint, so the segment is done after this request.
+//  2. importance: how much the datapoint matters, given its kind.
+//
+// Both outcomes are cached, so a rejected segment is not asked about again.
 func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f features.Features, rec *Record) (map[string]tev1.Answer, rank.Signals, tev1.Usage, bool, error) {
-	st, truncated := cl.buildState(seg.Text, f)
+	st, truncated := cl.buildState(seg.Text, f, "")
 	rec.StateTruncated = truncated
 	key := cache.Key(cl.Cfg.Model, cl.qsHash, seg.Hash)
 	if cl.Cache != nil {
@@ -266,69 +287,73 @@ func (cl *Classifier) classifyOne(ctx context.Context, seg segment.Segment, f fe
 		cl.add(func(s *Stats) { s.CacheMisses++ })
 	}
 
-	cl.log().Info("processing...", "state", st)
-	start := time.Now()
+	var none rank.Signals
+	kq, _ := cl.Cfg.Question(config.QKind)
+	iq, _ := cl.Cfg.Question(config.QImportance)
+	answers := make(map[string]tev1.Answer, 2)
+	var usage tev1.Usage
 
-	{
-		cl.log().Info("checking if datapoint")
-		var q tev1.NamedQuestion
-		questionStr := `
-    {
-			"name": "is_datapoint",
-      "type": "choice",
-      "instructions": "Does the segment contain a concrete, quantifiable or checkable fact (a specific number, date, name, measurement or event that could be verified)?",
-      "criteria": {
-        "yes": "It states at least one specific, checkable fact such as a number, date, amount, measurement or named event.",
-        "no": "It is general, vague, rhetorical or purely descriptive, with nothing concrete to check.",
-        "unknown": "The text is too fragmentary or ambiguous to judge."
-      }
-    }
-	`
-		if err := json.Unmarshal([]byte(questionStr), &q); err != nil {
-			return nil, rank.Signals{}, tev1.Usage{}, false, err
-		}
+	// 1. kind
+	cl.log().Debug("classifying kind", "segment", seg.ID)
+	resp, err := cl.decide(ctx, st, kq)
+	if err != nil {
+		return nil, none, tev1.Usage{}, false, err
+	}
+	usage = addUsage(usage, resp.Usage)
+	answers[config.QKind] = resp.Answers[config.QKind]
+	kind := answers[config.QKind].Choice
 
-		resp, err := cl.Client.Decide(ctx, tev1.Request{
-			Model: cl.Cfg.Model, State: st, Questions: tev1.QuestionSet{
-				q,
-			}, KeepAlive: cl.Cfg.KeepAlive,
-		})
-
+	// 2. importance, but only for datapoints.
+	if kind == config.KindOther {
+		cl.add(func(s *Stats) { s.ImportanceSkipped++ })
+		cl.log().Debug("not a datapoint; skipping importance", "segment", seg.ID)
+	} else {
+		cl.log().Debug("scoring importance", "segment", seg.ID, "kind", kind)
+		kindState, _ := cl.buildState(seg.Text, f, kind)
+		resp, err := cl.decide(ctx, kindState, iq)
 		if err != nil {
-			return nil, rank.Signals{}, tev1.Usage{}, false, err
+			return nil, none, tev1.Usage{}, false, err
 		}
-
-		sig, err := rank.ExtractSignals(cl.Cfg, resp.Answers)
-		cl.log().Info(fmt.Sprintf("datapoint?: %f", sig.PDatapoint))
-
-		if sig.PDatapoint < 0.5 {
-			return nil, rank.Signals{}, tev1.Usage{}, false, nil
-		}
+		usage = addUsage(usage, resp.Usage)
+		answers[config.QImportance] = resp.Answers[config.QImportance]
 	}
 
-	cl.log().Info("running classification")
-	resp, err := cl.Client.Decide(ctx, tev1.Request{
-		Model: cl.Cfg.Model, State: st, Questions: cl.Cfg.QuestionSet(), KeepAlive: cl.Cfg.KeepAlive,
-	})
-	cl.add(func(s *Stats) { s.ModelCalls++; s.ModelTime += time.Since(start) })
+	sig, err := rank.ExtractSignals(cl.Cfg, answers)
 	if err != nil {
-		return nil, rank.Signals{}, tev1.Usage{}, false, err
-	}
-
-	cl.noteUsage(resp.Usage)
-	cl.log().Info("done", "state", st)
-	sig, err := rank.ExtractSignals(cl.Cfg, resp.Answers)
-	if err != nil {
-		return nil, rank.Signals{}, tev1.Usage{}, false, fmt.Errorf("%w: %v", tev1.ErrMalformed, err)
+		return nil, none, tev1.Usage{}, false, fmt.Errorf("%w: %v", tev1.ErrMalformed, err)
 	}
 
 	if cl.Cache != nil {
-		if err := cl.Cache.Put(key, resp.Answers, resp.Usage); err != nil {
+		if err := cl.Cache.Put(key, answers, usage); err != nil {
 			cl.log().Warn("cache write failed", "err", err)
 		}
 	}
 
-	return resp.Answers, sig, resp.Usage, false, nil
+	return answers, sig, usage, false, nil
+}
+
+// decide sends one single-question request and records it in the stats.
+func (cl *Classifier) decide(ctx context.Context, st any, q tev1.NamedQuestion) (*tev1.Response, error) {
+	start := time.Now()
+	resp, err := cl.Client.Decide(ctx, tev1.Request{
+		Model: cl.Cfg.Model, State: st, Questions: tev1.QuestionSet{q}, KeepAlive: cl.Cfg.KeepAlive,
+	})
+	cl.add(func(s *Stats) { s.ModelCalls++; s.ModelTime += time.Since(start) })
+	if err != nil {
+		return nil, err
+	}
+	cl.noteUsage(resp.Usage)
+	return resp, nil
+}
+
+// addUsage sums token counts and tracks the largest single request.
+func addUsage(total, u tev1.Usage) tev1.Usage {
+	total.InputTokens += u.InputTokens
+	total.OutputTokens += u.OutputTokens
+	if u.InputTokens > total.PeakInputTokens {
+		total.PeakInputTokens = u.InputTokens
+	}
+	return total
 }
 
 // Finalize ranks the records, removes near-duplicates, and marks the selection.

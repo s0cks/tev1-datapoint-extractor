@@ -13,14 +13,16 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/s0cks/tev1-rank/internal/config"
+	"github.com/s0cks/tev1-rank/internal/features"
 	"github.com/s0cks/tev1-rank/internal/rank"
-	"github.com/s0cks/tev1-rank/internal/tev1"
+	"github.com/s0cks/tev1-rank/internal/segment"
 )
 
 func liveConfig(t *testing.T) config.Config {
@@ -38,7 +40,7 @@ func liveConfig(t *testing.T) config.Config {
 	return cfg
 }
 
-func TestLivePreflightAndDecide(t *testing.T) {
+func TestLivePreflightAndClassify(t *testing.T) {
 	cfg := liveConfig(t)
 	c := NewClient(cfg, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -49,22 +51,31 @@ func TestLivePreflightAndDecide(t *testing.T) {
 	}
 	t.Logf("ollama %s, model %s", ver, cfg.Model)
 
-	req := tev1.Request{
-		Model:     cfg.Model,
-		State:     state{Segment: "Revenue grew 14% to $2.3 billion in 2024.", Features: "numbers=3"},
-		Questions: cfg.QuestionSet(),
+	// One datapoint (kind + importance requests) and one piece of prose (kind only).
+	texts := []string{
+		"Revenue grew 14% to $2.3 billion in 2024.",
+		"The harbor smells of salt and diesel at dawn.",
 	}
-	resp, err := c.Decide(ctx, req)
+	segs := make([]segment.Segment, len(texts))
+	for i, tx := range texts {
+		segs[i] = segment.Segment{ID: fmt.Sprintf("live-%d", i), Text: tx, Hash: segment.HashText(tx), End: len(tx)}
+	}
+	cl := &Classifier{Cfg: cfg, Client: c}
+	recs, err := cl.BuildRecords(ctx, segs, features.ComputeAll(segs, len(texts[0])+len(texts[1])))
 	if err != nil {
-		t.Fatalf("Decide: %v", err)
+		t.Fatalf("BuildRecords: %v", err)
 	}
-	sig, err := rank.ExtractSignals(cfg, resp.Answers)
-	if err != nil {
-		t.Fatal(err)
+	for _, r := range recs {
+		t.Logf("%q: kind=%s p_datapoint=%.2f importance=%.1f tokens=%d (peak %d) answers=%d",
+			r.Text, r.Kind(), r.Signals.PDatapoint, r.Signals.Importance, r.InputTokens, r.PeakInputTokens, len(r.Answers))
+		if r.Signals.PDatapoint < 0 || r.Signals.PDatapoint > 1 {
+			t.Errorf("P(datapoint) out of range: %v", r.Signals.PDatapoint)
+		}
 	}
-	t.Logf("signals: %+v", sig)
-	if sig.PDatapoint < 0 || sig.PDatapoint > 1 {
-		t.Errorf("P(datapoint) out of range: %v", sig.PDatapoint)
+	st := cl.Stats()
+	t.Logf("requests = %d, importance skipped = %d", st.ModelCalls, st.ImportanceSkipped)
+	if st.ModelCalls != 2*len(texts)-st.ImportanceSkipped {
+		t.Errorf("requests = %d, want %d", st.ModelCalls, 2*len(texts)-st.ImportanceSkipped)
 	}
 }
 

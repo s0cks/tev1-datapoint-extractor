@@ -2,6 +2,7 @@ package evaluate
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -14,16 +15,18 @@ func approx(t *testing.T, name string, got *float64, want float64) {
 }
 
 func TestReadLabels(t *testing.T) {
-	good := "{\"text\":\"a 1\",\"is_datapoint\":true,\"kind\":\"stat\"}\n\n{\"text\":\"b\",\"is_datapoint\":false}\n"
+	good := "{\"text\":\"a 1\",\"is_datapoint\":true,\"kind\":\"stats\"}\n\n{\"text\":\"b\",\"is_datapoint\":false}\n{\"text\":\"c\",\"is_datapoint\":false,\"kind\":\"other\"}\n"
 	ls, err := ReadLabels(strings.NewReader(good))
-	if err != nil || len(ls) != 2 || ls[1].Kind != "" || !ls[0].IsDatapoint {
+	if err != nil || len(ls) != 3 || ls[1].Kind != "" || !ls[0].IsDatapoint {
 		t.Fatalf("%+v %v", ls, err)
 	}
 	for name, bad := range map[string]string{
-		"not json":      "nope\n",
-		"empty text":    "{\"text\":\"  \",\"is_datapoint\":true}\n",
-		"unknown field": "{\"text\":\"x\",\"is_datapoint\":true,\"isdatapoint\":1}\n",
-		"wrong type":    "{\"text\":\"x\",\"is_datapoint\":\"yes\"}\n",
+		"not json":            "nope\n",
+		"empty text":          "{\"text\":\"  \",\"is_datapoint\":true}\n",
+		"unknown field":       "{\"text\":\"x\",\"is_datapoint\":true,\"isdatapoint\":1}\n",
+		"wrong type":          "{\"text\":\"x\",\"is_datapoint\":\"yes\"}\n",
+		"other but datapoint": "{\"text\":\"x\",\"is_datapoint\":true,\"kind\":\"other\"}\n",
+		"kind but not":        "{\"text\":\"x\",\"is_datapoint\":false,\"kind\":\"stats\"}\n",
 	} {
 		if _, err := ReadLabels(strings.NewReader(bad)); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -34,20 +37,37 @@ func TestReadLabels(t *testing.T) {
 	}
 }
 
+// The shipped example labels must load (and so be self-consistent).
+func TestExampleLabelsLoad(t *testing.T) {
+	ls, err := LoadLabels("../../testdata/labels.example.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, l := range ls {
+		kinds[l.Kind]++
+	}
+	for _, k := range []string{"stats", "chart", "timeline", "quote", "findings", "threads", "callout", "profile", "sources", "other"} {
+		if kinds[k] == 0 {
+			t.Errorf("no example label of kind %q", k)
+		}
+	}
+}
+
 func TestCompute(t *testing.T) {
 	labels := []Label{
-		{"a", true, "stat"},           // predicted yes/stat  → TP, kind ok
-		{"b", true, "timeline_event"}, // predicted yes/stat  → TP, kind wrong
-		{"c", false, "narrative"},     // predicted no/narrative → TN, kind ok
-		{"d", false, ""},              // predicted yes/claim → FP, no kind label
-		{"e", true, "stat"},           // predicted no/narrative → FN, kind wrong
-		{"f", true, "stat"},           // model failed
+		{"a", true, "stats"},    // predicted stats    → TP, kind ok
+		{"b", true, "timeline"}, // predicted stats    → TP, kind wrong
+		{"c", false, "other"},   // predicted other    → TN, kind ok
+		{"d", false, ""},        // predicted findings → FP, no kind label
+		{"e", true, "stats"},    // predicted other    → FN, kind wrong
+		{"f", true, "stats"},    // model failed
 	}
 	preds := []Prediction{
-		{true, 0.9, "stat", 1}, {true, 0.8, "stat", 2}, {true, 0.1, "narrative", 5},
-		{true, 0.7, "claim", 3}, {true, 0.2, "narrative", 4}, {OK: false, Rank: 6},
+		{true, 0.9, "stats", 1}, {true, 0.8, "stats", 2}, {true, 0.1, "other", 5},
+		{true, 0.7, "findings", 3}, {true, 0.2, "other", 4}, {OK: false, Rank: 6},
 	}
-	r := Compute(labels, preds, 0.5, []int{2, 3, 5, 50})
+	r := Compute(labels, preds, []int{2, 3, 5, 50})
 	if r.Labels != 6 || r.Scored != 5 || r.Errors != 1 || r.Positives != 4 {
 		t.Errorf("counts: %+v", r)
 	}
@@ -60,20 +80,25 @@ func TestCompute(t *testing.T) {
 	for _, k := range r.Kinds {
 		byKind[k.Kind] = k
 	}
-	// stat: support 2 (a, e), predicted 2 (a, b), tp 1
-	approx(t, "stat precision", byKind["stat"].Precision, 0.5)
-	approx(t, "stat recall", byKind["stat"].Recall, 0.5)
-	// narrative: support 1 (c), predicted 2 (c, e), tp 1
-	approx(t, "narrative precision", byKind["narrative"].Precision, 0.5)
-	approx(t, "narrative recall", byKind["narrative"].Recall, 1)
-	// timeline_event: support 1, predicted 0 → precision undefined (nil), recall 0
-	if byKind["timeline_event"].Precision != nil {
+	// stats: support 2 (a, e), predicted 2 (a, b), tp 1
+	approx(t, "stats precision", byKind["stats"].Precision, 0.5)
+	approx(t, "stats recall", byKind["stats"].Recall, 0.5)
+	// other: support 1 (c), predicted 2 (c, e), tp 1
+	approx(t, "other precision", byKind["other"].Precision, 0.5)
+	approx(t, "other recall", byKind["other"].Recall, 1)
+	// timeline: support 1, predicted 0 → precision undefined (nil), recall 0
+	if byKind["timeline"].Precision != nil {
 		t.Error("precision with no predictions must be null")
 	}
-	approx(t, "timeline recall", byKind["timeline_event"].Recall, 0)
-	// claim was predicted for an item without a kind label → excluded entirely
-	if _, ok := byKind["claim"]; ok {
+	approx(t, "timeline recall", byKind["timeline"].Recall, 0)
+	// findings was predicted for an item without a kind label → excluded entirely
+	if _, ok := byKind["findings"]; ok {
 		t.Error("items without a kind label must not affect kind metrics")
+	}
+	// confusion matrix: rows labeled, columns predicted
+	wantConf := map[string]map[string]int{"stats": {"stats": 1, "other": 1}, "timeline": {"stats": 1}, "other": {"other": 1}}
+	if !reflect.DeepEqual(r.KindConfusion, wantConf) {
+		t.Errorf("kind confusion = %v, want %v", r.KindConfusion, wantConf)
 	}
 	// ranking by Rank: a(1,T) b(2,T) d(3,F) e(4,T) c(5,F) f(6,T)
 	for k, want := range map[string]float64{"2": 1, "3": 2.0 / 3, "5": 3.0 / 5, "50": 4.0 / 6} {
@@ -84,31 +109,31 @@ func TestCompute(t *testing.T) {
 }
 
 func TestComputeEdgeCases(t *testing.T) {
-	r := Compute(nil, nil, 0.5, []int{5})
+	r := Compute(nil, nil, []int{5})
 	if r.DatapointAccuracy != nil || r.KindAccuracy != nil || len(r.PrecisionAtK) != 0 {
 		t.Errorf("empty: %+v", r)
 	}
 	// Duplicates (Rank 0) are excluded from P@K; failures are excluded from accuracy.
 	labels := []Label{{Text: "x", IsDatapoint: true}, {Text: "x", IsDatapoint: true}}
-	r = Compute(labels, []Prediction{{OK: true, PDatapoint: 1, Kind: "stat", Rank: 1}, {OK: true, PDatapoint: 1, Kind: "stat"}}, 0.5, []int{5})
+	r = Compute(labels, []Prediction{{OK: true, PDatapoint: 1, Kind: "stats", Rank: 1}, {OK: true, PDatapoint: 1, Kind: "stats"}}, []int{5})
 	if r.PrecisionAtK["5"] != 1 || r.Scored != 2 {
 		t.Errorf("%+v", r)
 	}
-	// Threshold boundary: P == threshold counts as yes.
-	r = Compute(labels[:1], []Prediction{{OK: true, PDatapoint: 0.5, Rank: 1}}, 0.5, nil)
-	approx(t, "boundary accuracy", r.DatapointAccuracy, 1)
+	// The datapoint decision is the kind, not the soft probability.
+	r = Compute(labels[:1], []Prediction{{OK: true, PDatapoint: 0.9, Kind: "other", Rank: 1}}, nil)
+	approx(t, "other with high p is still a miss", r.DatapointAccuracy, 0)
 	// No-model style: nothing OK → no accuracy but P@K still works.
-	r = Compute(labels[:1], []Prediction{{Rank: 1}}, 0.5, []int{1})
+	r = Compute(labels[:1], []Prediction{{Rank: 1}}, []int{1})
 	if r.DatapointAccuracy != nil || r.PrecisionAtK["1"] != 1 {
 		t.Errorf("%+v", r)
 	}
 }
 
 func TestFormatSmoke(t *testing.T) {
-	r := Compute([]Label{{"a", true, "stat"}}, []Prediction{{true, 1, "stat", 1}}, 0.5, []int{5, 10})
+	r := Compute([]Label{{"a", true, "stats"}, {"b", false, "other"}}, []Prediction{{true, 1, "stats", 1}, {true, 0.1, "stats", 2}}, []int{5, 10})
 	r.Mode, r.Model = "model", "tev1:0.8b"
 	out := r.Format()
-	for _, want := range []string{"tev1:0.8b", "is_datapoint accuracy", "stat", "precision@5", "precision@10"} {
+	for _, want := range []string{"tev1:0.8b", "is_datapoint accuracy", "stats", "kind confusion", "precision@5", "precision@10"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q:\n%s", want, out)
 		}

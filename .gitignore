@@ -1,3 +1,8 @@
 /out/
 /bin/
+data/
+prose/
+*.txt
 *.test
+datapoint-only.json
+tev1-rank

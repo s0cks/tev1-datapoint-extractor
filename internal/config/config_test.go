@@ -21,8 +21,23 @@ func TestDefaultsAreValid(t *testing.T) {
 			t.Errorf("default kind %q has no weight", opt)
 		}
 	}
-	if n := len(kind.Options()); n != 9 {
-		t.Errorf("kind options = %d, want 9", n)
+	if n := len(kind.Options()); n != 10 {
+		t.Errorf("kind options = %d, want 10", n)
+	}
+	if !has(kind.Options(), KindOther) {
+		t.Errorf("kind needs the %q option", KindOther)
+	}
+	if _, ok := c.Question("is_datapoint"); ok {
+		t.Error("is_datapoint was replaced by kind = other and must not be a default question")
+	}
+	// Every block type the card schema can derive from prose is a kind.
+	for _, want := range []string{"stats", "chart", "timeline", "quote", "findings", "threads", "callout", "profile", "sources"} {
+		if !has(kind.Options(), want) {
+			t.Errorf("kind option %q missing", want)
+		}
+	}
+	if !has(c.Selection.ExcludeKinds, KindOther) {
+		t.Error("other must be excluded from selection by default")
 	}
 }
 
@@ -33,14 +48,20 @@ func TestOverrides(t *testing.T) {
 		os.WriteFile(p, []byte(s), 0o644)
 		return p
 	}
+	const imp = `{"name":"importance","type":"score","instructions":"x","criteria":["lo","hi"]}`
+	const kind = `{"name":"kind","type":"choice","instructions":"x","criteria":{"a":null,"other":null}}`
 	tests := []struct {
 		name, json, wantErr string
 	}{
-		{"model and weight merge", `{"model":"tev1:4b","ranking":{"kind_weights":{"stat":0.5,"extra":0.1}}}`, ""},
+		{"model and weight merge", `{"model":"tev1:4b","ranking":{"kind_weights":{"stats":0.5,"extra":0.1}}}`, ""},
 		{"unknown field rejected", `{"modle":"x"}`, "unknown field"},
-		{"missing required question", `{"questions":[{"name":"kind","type":"choice","instructions":"x","criteria":{"a":null,"b":null}}]}`, "is_datapoint"},
-		{"bad datapoint options", `{"questions":[{"name":"is_datapoint","type":"choice","instructions":"x","criteria":{"a":"1","b":"2"}},{"name":"kind","type":"choice","instructions":"x","criteria":{"a":null,"b":null}},{"name":"importance","type":"score","instructions":"x","criteria":["lo","hi"]}]}`, "yes"},
-		{"noul datapoint ok", `{"questions":[{"name":"is_datapoint","type":"noul","instructions":"x"},{"name":"kind","type":"choice","instructions":"x","criteria":{"a":null,"b":null}},{"name":"importance","type":"score","instructions":"x","criteria":["lo","hi"]}]}`, ""},
+		{"removed field rejected", `{"ranking":{"review":{"unknown_prob":0.3}}}`, "unknown field"},
+		{"missing kind", `{"questions":[` + imp + `]}`, "kind"},
+		{"missing importance", `{"questions":[` + kind + `]}`, "importance"},
+		{"kind needs other", `{"questions":[{"name":"kind","type":"choice","instructions":"x","criteria":{"a":null,"b":null}},` + imp + `]}`, "other"},
+		{"kind must be a choice", `{"questions":[{"name":"kind","type":"noul","instructions":"x"},` + imp + `]}`, "choice"},
+		{"importance must be a score", `{"questions":[` + kind + `,{"name":"importance","type":"noul","instructions":"x"}]}`, "score"},
+		{"minimal valid", `{"questions":[` + kind + `,` + imp + `]}`, ""},
 		{"zero concurrency", `{"concurrency":0}`, "concurrency"},
 		{"all-zero weights", `{"ranking":{"weights":{"datapoint":0,"importance":0,"kind":0,"features":0}}}`, "weights"},
 		{"not json", `{`, "parsing"},
@@ -56,8 +77,8 @@ func TestOverrides(t *testing.T) {
 			}
 		})
 	}
-	c, _ := Load(write(`{"ranking":{"kind_weights":{"stat":0.5}}}`))
-	if c.Ranking.KindWeights["stat"] != 0.5 || c.Ranking.KindWeights["quote"] != 0.5 {
+	c, _ := Load(write(`{"ranking":{"kind_weights":{"stats":0.5}}}`))
+	if c.Ranking.KindWeights["stats"] != 0.5 || c.Ranking.KindWeights["findings"] != 0.8 {
 		t.Errorf("kind_weights should merge with defaults: %v", c.Ranking.KindWeights)
 	}
 	if _, err := Load(filepath.Join(dir, "missing.json")); err == nil {
@@ -104,35 +125,45 @@ func TestWarningsForMismatchedKindWeights(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "c.json")
 	os.WriteFile(p, []byte(`{"questions":[
-	  {"name":"is_datapoint","type":"noul","instructions":"x"},
-	  {"name":"kind","type":"choice","instructions":"x","criteria":{"stats":"s","timeline":"t","other":"o"}},
+	  {"name":"kind","type":"choice","instructions":"x","criteria":{"figures":"s","dates":"t","other":"o"}},
 	  {"name":"importance","type":"score","instructions":"x","criteria":["a","b"]}]}`), 0o644)
 	c, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := strings.Join(c.Warnings(), "\n")
-	if !strings.Contains(w, "stats") || !strings.Contains(w, "timeline") || !strings.Contains(w, "default_kind_weight") {
+	if !strings.Contains(w, "figures") || !strings.Contains(w, "dates") || !strings.Contains(w, "default_kind_weight") {
 		t.Errorf("missing-weight warning absent:\n%s", w)
 	}
-	if !strings.Contains(w, "stat") || !strings.Contains(w, "timeline_event") || !strings.Contains(w, "ignored") {
+	if !strings.Contains(w, "stats") || !strings.Contains(w, "timeline") || !strings.Contains(w, "ignored") {
 		t.Errorf("stale-weight warning absent:\n%s", w)
 	}
-	// Supplying matching weights silences both.
+	// Supplying matching weights silences the missing-weight warning.
 	os.WriteFile(p, []byte(`{"questions":[
-	  {"name":"is_datapoint","type":"noul","instructions":"x"},
-	  {"name":"kind","type":"choice","instructions":"x","criteria":{"stats":"s","other":"o"}},
+	  {"name":"kind","type":"choice","instructions":"x","criteria":{"figures":"s","other":"o"}},
 	  {"name":"importance","type":"score","instructions":"x","criteria":["a","b"]}],
-	  "ranking":{"kind_weights":{"stats":1,"other":0.1}}}`), 0o644)
+	  "ranking":{"kind_weights":{"figures":1,"other":0}}}`), 0o644)
 	c, _ = Load(p)
-	if w := c.Warnings(); len(w) == 0 || strings.Contains(strings.Join(w, ""), "no ranking.kind_weights") {
-		// stale default keys (quote, claim, ...) still warn; missing ones must not
-		t.Logf("warnings: %v", w)
-	}
 	for _, x := range c.Warnings() {
 		if strings.Contains(x, "no ranking.kind_weights") {
 			t.Errorf("unexpected missing-weight warning: %s", x)
 		}
+	}
+}
+
+// Questions other than kind and importance are never sent, so say so.
+func TestWarningForUnusedQuestion(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.json")
+	os.WriteFile(p, []byte(`{"questions":[
+	  {"name":"is_datapoint","type":"noul","instructions":"x"},
+	  {"name":"kind","type":"choice","instructions":"x","criteria":{"stats":"s","other":"o"}},
+	  {"name":"importance","type":"score","instructions":"x","criteria":["a","b"]}]}`), 0o644)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := strings.Join(c.Warnings(), "\n"); !strings.Contains(w, `"is_datapoint" is not used`) {
+		t.Errorf("warnings:\n%s", w)
 	}
 }
 

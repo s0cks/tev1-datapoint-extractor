@@ -21,35 +21,26 @@
 
   "questions": [
     {
-      "name": "is_datapoint",
-      "type": "choice",
-      "instructions": "Does the segment contain a concrete, quantifiable or checkable fact (a specific number, date, name, measurement or event that could be verified)?",
-      "criteria": {
-        "yes": "It states at least one specific, checkable fact such as a number, date, amount, measurement or named event.",
-        "no": "It is general, vague, rhetorical or purely descriptive, with nothing concrete to check.",
-        "unknown": "The text is too fragmentary or ambiguous to judge."
-      }
-    },
-    {
       "name": "kind",
       "type": "choice",
-      "instructions": "Which kind of statement is this segment?",
+      "instructions": "Which kind of datapoint is this segment? Pick the one whose main point it makes. If it is scene-setting, general background, an opinion without evidence, a definition, a transition or filler, with nothing concrete to check, pick other.",
       "criteria": {
-        "stat": "A statistic or numerical measurement: an explicit quantity, rate, percentage, amount, or count.",
-        "timeline_event": "Describes a historical occurrence, plot development, action taken, mission, or specific event tied to an era, sequence, or explicit timeframe.",
-        "comparison": "Explicitly contrasts, balances, or links two or more distinct entities, configurations, or operational before-and-after states.",
-        "quote": "Reported speech, verbatim testimonies, or direct quotations explicitly attributed to a source or person.",
-        "definition": "Strictly explains the core meaning, translation, structure, or scope of an abstract concept, technical term, code project, or acronym.",
-        "list": "An explicit enumeration, series of items, or consecutive steps detailed sequentially.",
-        "claim": "An abstract assertion, strategic argument, hypothesis, or speculative opinion that lacks direct empirical data or confirmation.",
-        "narrative": "Storytelling, scene-setting, or background prose tracking psychological reactions, states of being, or environment descriptions without fresh actions.",
-        "other": "None of the above descriptions fit."
+        "stats": "A measured number is the point: a count, amount, percentage, rate, price or size stated about one subject.",
+        "chart": "Numbers for two or more things or periods set side by side to compare or trend: A versus B, before and after, up from X to Y, a series over years.",
+        "timeline": "A specific event or action pinned to a date, year or sequence: what happened and when (founded, opened, voted, signed, died, expected).",
+        "quote": "Words attributed to a named person or source: a direct quotation or reported speech.",
+        "findings": "A conclusion established by evidence: what an audit, study, investigation or analysis found, showed, determined or concluded.",
+        "threads": "A link between people, groups, events or documents (who funded, advised, reported to or caused whom), or an open lead or unanswered question to follow up.",
+        "callout": "A key takeaway, warning, recommendation, risk or caveat the reader must not miss.",
+        "profile": "Who or what a named person, organisation or place is: role, background, affiliation, size or purpose.",
+        "sources": "Identifies a document, report, record or archive by title, author, date or reference, as a citation.",
+        "other": "None of the above: atmosphere, description, general or vague statements, opinion, definitions, transitions, filler."
       }
     },
     {
       "name": "importance",
       "type": "score",
-      "instructions": "How important is this segment for someone skimming the document for its key points?",
+      "instructions": "The segment is a datapoint of the given kind. How important is it for someone skimming the document for its key points?",
       "criteria": [
         "Trivial: filler, transitions or minor detail.",
         "Minor: supporting detail.",
@@ -68,15 +59,16 @@
       "features": 0.25
     },
     "kind_weights": {
-      "stat": 1.0,
-      "timeline_event": 0.85,
-      "comparison": 0.9,
+      "stats": 1.0,
+      "chart": 0.9,
+      "timeline": 0.85,
+      "findings": 0.8,
+      "threads": 0.6,
+      "profile": 0.5,
       "quote": 0.5,
-      "definition": 0.5,
-      "list": 0.6,
-      "claim": 0.6,
-      "narrative": 0.2,
-      "other": 0.1
+      "callout": 0.5,
+      "sources": 0.4,
+      "other": 0.0
     },
     "default_kind_weight": 0.3,
     "feature_weights": {
@@ -90,14 +82,18 @@
     },
     "feature_saturation": 2,
     "review": {
-      "unknown_prob": 0.4,
       "kind_margin": 0.05,
       "min_confidence": 0.15,
-      "confidence_questions": ["is_datapoint"]
+      "confidence_questions": ["kind"]
     }
   },
 
-  "selection": { "top": 20, "min_score": 0, "max_per_kind": 0 },
+  "selection": {
+    "top": 20,
+    "min_score": 0,
+    "max_per_kind": 0,
+    "exclude_kinds": ["other"]
+  },
 
-  "eval": { "datapoint_threshold": 0.5, "k": [5, 10] }
+  "eval": { "k": [5, 10] }
 }

@@ -57,19 +57,24 @@ being right.
 
 ## How this tool maps its questions
 
-| Question | Wire type | Notes |
-|---|---|---|
-| `is_datapoint` | `choice` with `yes` / `no` / `unknown` | `noul` has no documented "unknown" outcome, and `needs_review` wants a real P(unknown). `type: "noul"` also works if you prefer it (config validation accepts both). |
-| `kind` | `choice` with 9 options | One-line description per option. |
-| `importance` | `score` with 5 levels (0..4) | Reported to you as 1..5 (`score + 1`). |
+Each segment takes up to two requests, each carrying exactly one question:
+
+| # | Question | Wire type | Notes |
+|---|---|---|---|
+| 1 | `kind` | `choice`, 10 options | The card-schema block types plus `other`. One-line description per option. |
+| 2 | `importance` | `score`, 5 levels (0..4) | Only sent when `kind` is not `other`. Reported as 1..5 (`score + 1`). The state also carries `kind`. |
+
+`other` is the "not a datapoint" outcome, so there is no `is_datapoint` question and no `unknown`
+option. `p_datapoint` is derived as `1 - P(kind = other)`. Questions in a config file with any other
+name are ignored (with a warning).
 
 ## What is assumed about the response (unverified)
 
 ```json
 { "model": "tev1:0.8b",
   "answers": {
-    "is_datapoint": { "choice": "yes", "probabilities": { "yes": 0.93, "no": 0.05, "unknown": 0.02 }, "confidence": 0.9 },
-    "importance":   { "score": 3.2, "legend": ["..."], "probabilities": { "0": 0.01, "...": 0 }, "confidence": 0.58 }
+    "kind":       { "choice": "stats", "probabilities": { "stats": 0.93, "other": 0.05, "chart": 0.02 }, "confidence": 0.9 },
+    "importance": { "score": 3.2, "legend": ["..."], "probabilities": { "0": 0.01, "...": 0 }, "confidence": 0.58 }
   } }
 ```
 
@@ -125,8 +130,9 @@ Options to fix it (try in this order):
    `num_ctx` has not been verified; the request body is not documented to accept options.
 2. **Shorten the questions** (fewer/shorter options and descriptions), especially if tokens
    scale with the number of questions.
-3. **Ask fewer questions per request** (not implemented): e.g. one request for `is_datapoint`
-   and another for `kind` + `importance`.
+3. **Ask fewer questions per request**: implemented. `kind` and `importance` are separate requests,
+   and the second is skipped for `other` segments. Re-run `scripts/measure-tokens.sh` to see the
+   new per-request cost (its per-question probes are what each request now sends).
 
 ## Errors and retries
 

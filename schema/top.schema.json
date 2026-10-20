@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "mode", "source", "model", "question_set_hash", "selection", "count", "items"],
   "properties": {
-    "schema_version": { "const": "tev1-rank/top/v1" },
+    "schema_version": { "const": "tev1-rank/top/v2" },
     "mode": {
       "enum": ["model", "no-model"],
       "description": "\"no-model\" means ranking used deterministic features only; kind and model are null."
@@ -58,7 +58,7 @@
         "needs_review": { "type": "boolean" },
         "review_reasons": {
           "type": "array",
-          "items": { "enum": ["high_unknown_probability", "datapoint_uncertain", "kind_top_two_close", "low_confidence", "context_window_exceeded", "model_error"] }
+          "items": { "enum": ["datapoint_uncertain", "kind_top_two_close", "low_confidence", "context_window_exceeded", "model_error"] }
         },
         "features": {
           "type": "object",
@@ -81,10 +81,9 @@
           "type": ["object", "null"],
           "description": "Compact model answers; null in no-model mode.",
           "additionalProperties": false,
-          "required": ["p_datapoint", "p_unknown", "importance", "kind_probs", "confidence"],
+          "required": ["p_datapoint", "importance", "kind_probs", "confidence"],
           "properties": {
-            "p_datapoint": { "type": "number", "minimum": 0, "maximum": 1 },
-            "p_unknown": { "type": "number", "minimum": 0, "maximum": 1 },
+            "p_datapoint": { "type": "number", "minimum": 0, "maximum": 1, "description": "1 - P(kind = other)." },
             "importance": { "type": "number", "description": "Expected importance on the configured scale, 1..N (1..5 by default)." },
             "kind_probs": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
             "confidence": { "type": ["number", "null"], "description": "Lowest model-reported confidence among ranking.review.confidence_questions (default: is_datapoint only), if reported." }
